@@ -83,32 +83,152 @@ public class ModelAxolotl extends ModelBase {
     public void setRotationAngles(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scaleFactor, Entity entityIn) {
         resetRotations();
 
-        boolean inWater = entityIn.isInWater();
-        float swim = MathHelper.sin(ageInTicks * (inWater ? 0.33F : 0.12F));
-        float swimCos = MathHelper.cos(ageInTicks * (inWater ? 0.30F : 0.12F));
+        EntityAxolotl axolotl = entityIn instanceof EntityAxolotl ? (EntityAxolotl)entityIn : null;
+        float playingDeadFactor = axolotl != null && axolotl.isPlayingDead() ? 1.0F : 0.0F;
+        float inWaterFactor = playingDeadFactor == 0.0F && entityIn.isInWater() ? 1.0F : 0.0F;
+        float onGroundFactor = playingDeadFactor == 0.0F && !entityIn.isInWater() && entityIn.onGround ? 1.0F : 0.0F;
+        double horizontalMotion = entityIn.motionX * entityIn.motionX + entityIn.motionZ * entityIn.motionZ;
+        float movingFactor = horizontalMotion > 7.5E-5D || limbSwingAmount > 0.01F ? 1.0F : 0.0F;
+        float notMovingFactor = 1.0F - movingFactor;
+        float mirroredLegsFactor = 1.0F - Math.min(onGroundFactor, movingFactor);
 
-        body.rotateAngleX = inWater ? headPitch * 0.017453292F + swim * 0.13F : 0.08F;
-        body.rotateAngleY = netHeadYaw * 0.017453292F * 0.25F;
-        head.rotateAngleX = -swim * 0.16F;
-        tail.rotateAngleY = swimCos * (inWater ? 0.45F : 0.12F);
+        body.rotateAngleY += netHeadYaw * 0.017453292F;
+        setupSwimmingAnimation(ageInTicks, headPitch, Math.min(movingFactor, inWaterFactor));
+        setupWaterHoveringAnimation(ageInTicks, Math.min(notMovingFactor, inWaterFactor));
+        setupGroundCrawlingAnimation(ageInTicks, Math.min(movingFactor, onGroundFactor));
+        setupLayStillOnGroundAnimation(ageInTicks, Math.min(notMovingFactor, onGroundFactor));
+        setupPlayDeadAnimation(playingDeadFactor);
+        applyMirrorLegRotations(mirroredLegsFactor);
+    }
 
-        topGills.rotateAngleX = inWater ? -0.65F - swim * 0.25F : 0.45F;
-        leftGills.rotateAngleY = inWater ? 0.75F + swim * 0.15F : -0.45F;
-        rightGills.rotateAngleY = -leftGills.rotateAngleY;
+    private void setupLayStillOnGroundAnimation(float ageInTicks, float factor) {
+        if (factor > 1.0E-5F) {
+            float animMoveSpeed = ageInTicks * 0.09F;
+            float sineSway = MathHelper.sin(animMoveSpeed);
+            float cosineSway = MathHelper.cos(animMoveSpeed);
+            float movement = sineSway * sineSway - 2.0F * sineSway;
+            float movement2 = cosineSway * cosineSway - 3.0F * sineSway;
 
-        float legPose = inWater ? 1.8849558F : 0.95F;
-        leftFrontLeg.rotateAngleX = legPose;
-        rightFrontLeg.rotateAngleX = legPose;
-        leftHindLeg.rotateAngleX = legPose;
-        rightHindLeg.rotateAngleX = legPose;
+            head.rotateAngleX += -0.09F * movement * factor;
+            head.rotateAngleZ += -0.2F * factor;
+            tail.rotateAngleY += (-0.1F + 0.1F * movement) * factor;
+            float gillAngle = (0.6F + 0.05F * movement2) * factor;
 
-        leftFrontLeg.rotateAngleY = 1.7F + swim * 0.2F;
-        rightFrontLeg.rotateAngleY = -leftFrontLeg.rotateAngleY;
-        leftHindLeg.rotateAngleY = 0.8F - swim * 0.2F;
-        rightHindLeg.rotateAngleY = -leftHindLeg.rotateAngleY;
+            topGills.rotateAngleX += gillAngle;
+            leftGills.rotateAngleY -= gillAngle;
+            rightGills.rotateAngleY += gillAngle;
+            leftHindLeg.rotateAngleX += 1.1F * factor;
+            leftHindLeg.rotateAngleY += 1.0F * factor;
+            leftFrontLeg.rotateAngleX += 0.8F * factor;
+            leftFrontLeg.rotateAngleY += 2.3F * factor;
+            leftFrontLeg.rotateAngleZ -= 0.5F * factor;
+        }
+    }
+
+    private void setupGroundCrawlingAnimation(float ageInTicks, float factor) {
+        if (factor > 1.0E-5F) {
+            float animMoveSpeed = ageInTicks * 0.11F;
+            float cosineSway = MathHelper.cos(animMoveSpeed);
+            float hindLegYRotSway = (cosineSway * cosineSway - 2.0F * cosineSway) / 5.0F;
+            float frontLegYRotSway = 0.7F * cosineSway;
+            float headAndTailYRot = 0.09F * cosineSway * factor;
+
+            head.rotateAngleY += headAndTailYRot;
+            tail.rotateAngleY += headAndTailYRot;
+            float gillAngle = (0.6F - 0.08F * (cosineSway * cosineSway + 2.0F * MathHelper.sin(animMoveSpeed))) * factor;
+
+            topGills.rotateAngleX += gillAngle;
+            leftGills.rotateAngleY -= gillAngle;
+            rightGills.rotateAngleY += gillAngle;
+            float hindLegXRot = 0.9424779F * factor;
+            float frontLegXRot = 1.0995574F * factor;
+
+            leftHindLeg.rotateAngleX += hindLegXRot;
+            leftHindLeg.rotateAngleY += (1.5F - hindLegYRotSway) * factor;
+            leftHindLeg.rotateAngleZ += -0.1F * factor;
+            leftFrontLeg.rotateAngleX += frontLegXRot;
+            leftFrontLeg.rotateAngleY += (1.5707964F - frontLegYRotSway) * factor;
+            rightHindLeg.rotateAngleX += hindLegXRot;
+            rightHindLeg.rotateAngleY += (-1.0F - hindLegYRotSway) * factor;
+            rightFrontLeg.rotateAngleX += frontLegXRot;
+            rightFrontLeg.rotateAngleY += (-1.5707964F - frontLegYRotSway) * factor;
+        }
+    }
+
+    private void setupWaterHoveringAnimation(float ageInTicks, float factor) {
+        if (factor > 1.0E-5F) {
+            float animMoveSpeed = ageInTicks * 0.075F;
+            float cosineSway = MathHelper.cos(animMoveSpeed);
+            float sineSway = MathHelper.sin(animMoveSpeed) * 0.15F;
+            float bodyXRot = (-0.15F + 0.075F * cosineSway) * factor;
+
+            body.rotateAngleX += bodyXRot;
+            body.rotationPointY -= sineSway * factor;
+            head.rotateAngleX -= bodyXRot;
+            topGills.rotateAngleX += 0.2F * cosineSway * factor;
+            float gillYRot = (-0.3F * cosineSway - 0.19F) * factor;
+
+            leftGills.rotateAngleY += gillYRot;
+            rightGills.rotateAngleY -= gillYRot;
+            leftHindLeg.rotateAngleX += (2.3561945F - cosineSway * 0.11F) * factor;
+            leftHindLeg.rotateAngleY += 0.47123894F * factor;
+            leftHindLeg.rotateAngleZ += 1.7278761F * factor;
+            leftFrontLeg.rotateAngleX += (0.7853982F - cosineSway * 0.2F) * factor;
+            leftFrontLeg.rotateAngleY += 2.042035F * factor;
+            tail.rotateAngleY += 0.5F * cosineSway * factor;
+        }
+    }
+
+    private void setupSwimmingAnimation(float ageInTicks, float xRot, float factor) {
+        if (factor > 1.0E-5F) {
+            float animMoveSpeed = ageInTicks * 0.33F;
+            float sineSway = MathHelper.sin(animMoveSpeed);
+            float cosineSway = MathHelper.cos(animMoveSpeed);
+            float bodySway = 0.13F * sineSway;
+
+            body.rotateAngleX += (xRot * 0.017453292F + bodySway) * factor;
+            head.rotateAngleX -= bodySway * 1.8F * factor;
+            body.rotationPointY -= 0.45F * cosineSway * factor;
+            topGills.rotateAngleX += (-0.5F * sineSway - 0.8F) * factor;
+            float gillYRot = (0.3F * sineSway + 0.9F) * factor;
+
+            leftGills.rotateAngleY += gillYRot;
+            rightGills.rotateAngleY -= gillYRot;
+            tail.rotateAngleY += 0.3F * MathHelper.cos(animMoveSpeed * 0.9F) * factor;
+            leftHindLeg.rotateAngleX += 1.8849558F * factor;
+            leftHindLeg.rotateAngleY += -0.4F * sineSway * factor;
+            leftHindLeg.rotateAngleZ += 1.5707964F * factor;
+            leftFrontLeg.rotateAngleX += 1.8849558F * factor;
+            leftFrontLeg.rotateAngleY += (-0.2F * cosineSway - 0.1F) * factor;
+            leftFrontLeg.rotateAngleZ += 1.5707964F * factor;
+        }
+    }
+
+    private void setupPlayDeadAnimation(float factor) {
+        if (factor > 1.0E-5F) {
+            leftHindLeg.rotateAngleX += 1.4137167F * factor;
+            leftHindLeg.rotateAngleY += 1.0995574F * factor;
+            leftHindLeg.rotateAngleZ += 0.7853982F * factor;
+            leftFrontLeg.rotateAngleX += 0.7853982F * factor;
+            leftFrontLeg.rotateAngleY += 2.042035F * factor;
+            body.rotateAngleX += -0.15F * factor;
+            body.rotateAngleZ += 0.35F * factor;
+        }
+    }
+
+    private void applyMirrorLegRotations(float factor) {
+        if (factor > 1.0E-5F) {
+            rightHindLeg.rotateAngleX += leftHindLeg.rotateAngleX * factor;
+            rightHindLeg.rotateAngleY += -leftHindLeg.rotateAngleY * factor;
+            rightHindLeg.rotateAngleZ += -leftHindLeg.rotateAngleZ * factor;
+            rightFrontLeg.rotateAngleX += leftFrontLeg.rotateAngleX * factor;
+            rightFrontLeg.rotateAngleY += -leftFrontLeg.rotateAngleY * factor;
+            rightFrontLeg.rotateAngleZ += -leftFrontLeg.rotateAngleZ * factor;
+        }
     }
 
     private void resetRotations() {
+        body.rotationPointY = 19.5F;
         body.rotateAngleX = 0.0F;
         body.rotateAngleY = 0.0F;
         body.rotateAngleZ = 0.0F;
