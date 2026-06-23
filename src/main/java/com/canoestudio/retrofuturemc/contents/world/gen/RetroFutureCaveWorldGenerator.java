@@ -25,6 +25,7 @@ import java.util.Random;
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_SIZE = 16;
     private static final int CHUNK_MARGIN = 5;
+    private static final int AZALEA_TREE_CHANCE = 9;
 
     @Override
     public void generate(Random random, int chunkX, int chunkZ, World world, IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
@@ -35,10 +36,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         int blockX = chunkX * 16;
         int blockZ = chunkZ * 16;
 
-        if (random.nextInt(9) == 0) {
-            BlockPos lushCenter = findCavePocket(world, random, blockX, blockZ, 12, 56);
+        if (random.nextInt(AZALEA_TREE_CHANCE) == 0) {
+            BlockPos azaleaTree = findSurfaceAzaleaTreePos(world, random, blockX, blockZ);
+            BlockPos lushCenter = azaleaTree == null ? null : findCavePocketBelowAzalea(world, random, azaleaTree, blockX, blockZ);
 
-            if (lushCenter != null) {
+            if (lushCenter != null && generateSurfaceAzaleaTree(world, random, azaleaTree)) {
+                placeRootTrail(world, random, azaleaTree, lushCenter);
                 generateLushPocket(world, random, lushCenter, blockX, blockZ);
             }
         }
@@ -50,6 +53,20 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                 generateDripstonePocket(world, random, dripstoneCenter, blockX, blockZ);
             }
         }
+    }
+
+    private BlockPos findSurfaceAzaleaTreePos(World world, Random random, int blockX, int blockZ) {
+        BlockPos start = world.getHeight(new BlockPos(blockX + 7 + random.nextInt(2), 0, blockZ + 7 + random.nextInt(2)));
+
+        if (start.getY() < 50 || start.getY() > world.getActualHeight() - 16) {
+            return null;
+        }
+
+        return start;
+    }
+
+    private boolean generateSurfaceAzaleaTree(World world, Random random, BlockPos start) {
+        return new WorldGenBigAzaleaTree(true).generate(world, random, start);
     }
 
     private BlockPos findCavePocket(World world, Random random, int blockX, int blockZ, int minY, int maxY) {
@@ -65,6 +82,49 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         return null;
+    }
+
+    private BlockPos findCavePocketBelowAzalea(World world, Random random, BlockPos azaleaTree, int blockX, int blockZ) {
+        int minY = 12;
+        int maxY = Math.min(56, azaleaTree.getY() - 8);
+
+        if (maxY <= minY) {
+            return null;
+        }
+
+        for (int attempt = 0; attempt < 40; attempt++) {
+            BlockPos pos = new BlockPos(
+                    azaleaTree.getX() + random.nextInt(7) - 3,
+                    minY + random.nextInt(maxY - minY),
+                    azaleaTree.getZ() + random.nextInt(7) - 3);
+
+            if (!isInsideChunk(pos, blockX, blockZ)) {
+                continue;
+            }
+
+            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 4)) {
+                return pos;
+            }
+        }
+
+        return null;
+    }
+
+    private void placeRootTrail(World world, Random random, BlockPos azaleaTree, BlockPos lushCenter) {
+        int bottomY = Math.max(lushCenter.getY() + 2, 4);
+
+        for (int y = azaleaTree.getY() - 2; y >= bottomY; y--) {
+            BlockPos pos = new BlockPos(azaleaTree.getX(), y, azaleaTree.getZ());
+            Block block = world.getBlockState(pos).getBlock();
+
+            if (block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.STONE || block == Blocks.GRAVEL || block == ModBlocks.MOSS_BLOCK) {
+                if (random.nextInt(4) != 0) {
+                    world.setBlockState(pos, ModBlocks.ROOTED_DIRT.getDefaultState(), 2);
+                }
+            } else if (world.isAirBlock(pos) && random.nextInt(3) == 0 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, pos)) {
+                world.setBlockState(pos, ModBlocks.HANGING_ROOTS.getDefaultState(), 2);
+            }
+        }
     }
 
     private boolean hasNearbySolid(World world, BlockPos pos, int radius) {
