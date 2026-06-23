@@ -8,6 +8,8 @@ import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.BigDripleaf;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.DripleafStem;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.SmallDripleaf;
 import com.canoestudio.retrofuturemc.contents.mobs.axolotl.EntityAxolotl;
+import git.jbredwards.fluidlogged_api.api.util.FluidState;
+import git.jbredwards.fluidlogged_api.api.util.FluidloggedUtils;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
@@ -19,8 +21,10 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fml.common.IWorldGenerator;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -230,7 +234,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private void decorateLushFloor(World world, Random random, BlockPos pos, int blockX, int blockZ) {
         BlockPos above = pos.up();
 
-        if (!world.isAirBlock(above)) {
+        if (!isAirOrWater(world, above)) {
             return;
         }
 
@@ -250,17 +254,17 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             world.setBlockState(pos, ModBlocks.MOSS_BLOCK.getDefaultState(), 2);
         }
 
-        if (!world.isAirBlock(above)) {
+        if (!isAirOrWater(world, above)) {
             return;
         }
 
         int roll = random.nextInt(100);
 
-        if (roll < 28) {
+        if (roll < 28 && world.isAirBlock(above)) {
             world.setBlockState(above, ModBlocks.MOSS_CARPET.getDefaultState(), 2);
-        } else if (roll < 36 && ModBlocks.Azalea.canPlaceBlockAt(world, above)) {
+        } else if (roll < 36 && world.isAirBlock(above) && ModBlocks.Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Azalea.getDefaultState(), 2);
-        } else if (roll < 43 && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
+        } else if (roll < 43 && world.isAirBlock(above) && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Flowering_Azalea.getDefaultState(), 2);
         } else if (roll < 58 && isNearWater(world, above, 4, blockX, blockZ)) {
             placeRandomDripleaf(world, random, above, blockX, blockZ);
@@ -268,12 +272,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private boolean tryPlaceClayPoolWithDripleaf(World world, Random random, BlockPos floor, BlockPos above, int blockX, int blockZ) {
-        if (!world.isAirBlock(above) || !world.isAirBlock(above.up())) {
+        if (!isAirOrWater(world, above)) {
             return false;
         }
 
         world.setBlockState(floor, Blocks.CLAY.getDefaultState(), 2);
         boolean placedWater = false;
+        List<BlockPos> waterTargets = new ArrayList<BlockPos>();
 
         for (int i = 0; i < 4; i++) {
             EnumFacing facing = EnumFacing.byHorizontalIndex((i + random.nextInt(4)) & 3);
@@ -288,7 +293,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
             if (world.isAirBlock(waterPos) && random.nextInt(100) < 55) {
                 world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), 2);
+                waterTargets.add(waterPos);
                 placedWater = true;
+            }
+        }
+
+        while (!waterTargets.isEmpty()) {
+            BlockPos target = waterTargets.remove(random.nextInt(waterTargets.size()));
+
+            if (placeRandomDripleaf(world, random, target, blockX, blockZ)) {
+                return true;
             }
         }
 
@@ -300,14 +314,17 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private void placeRandomDripleaf(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+    private boolean placeRandomDripleaf(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
         if (random.nextInt(100) < 55 && placeBigDripleafColumn(world, random, basePos, blockX, blockZ)) {
-            return;
+            return true;
         }
 
-        if (world.isAirBlock(basePos) && world.isAirBlock(basePos.up())) {
+        if (canPlaceDripleafPartAt(world, basePos, blockX, blockZ) && canPlaceDripleafPartAt(world, basePos.up(), blockX, blockZ)) {
             ((SmallDripleaf)ModBlocks.SMALL_DRIPLEAF).placeAt(world, basePos, EnumFacing.byHorizontalIndex(random.nextInt(4)), 2);
+            return true;
         }
+
+        return false;
     }
 
     private boolean placeBigDripleafColumn(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
@@ -321,17 +338,40 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         for (int y = 0; y <= stemHeight; y++) {
             BlockPos check = basePos.up(y);
 
-            if (!isInsideChunk(check, blockX, blockZ) || !world.isAirBlock(check)) {
+            if (!canPlaceDripleafPartAt(world, check, blockX, blockZ)) {
                 return false;
             }
         }
 
         for (int y = 0; y < stemHeight; y++) {
-            world.setBlockState(basePos.up(y), ModBlocks.DRIPLEAF_STEM.getDefaultState().withProperty(DripleafStem.FACING, facing), 2);
+            setFluidloggableBlock(world, basePos.up(y), ModBlocks.DRIPLEAF_STEM.getDefaultState().withProperty(DripleafStem.FACING, facing), 2);
         }
 
-        world.setBlockState(basePos.up(stemHeight), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(BigDripleaf.FACING, facing), 2);
+        setFluidloggableBlock(world, basePos.up(stemHeight), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(BigDripleaf.FACING, facing), 2);
         return true;
+    }
+
+    private boolean canPlaceDripleafPartAt(World world, BlockPos pos, int blockX, int blockZ) {
+        return isInsideChunk(pos, blockX, blockZ) && isAirOrWater(world, pos);
+    }
+
+    private boolean isAirOrWater(World world, BlockPos pos) {
+        IBlockState state = world.getBlockState(pos);
+        return state.getBlock() == Blocks.AIR || state.getMaterial() == Material.WATER;
+    }
+
+    private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags) {
+        if (hasWaterFluid(world, pos)) {
+            world.setBlockState(pos, newState, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+        } else {
+            world.setBlockState(pos, newState, flags);
+        }
+    }
+
+    private boolean hasWaterFluid(World world, BlockPos pos) {
+        IBlockState state = world.getBlockState(pos);
+        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
     }
 
     private boolean canSupportDripleaf(Block block) {

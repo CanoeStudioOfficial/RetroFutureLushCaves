@@ -11,7 +11,6 @@ import net.minecraft.block.*;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.properties.PropertyEnum;
-import net.minecraft.block.state.BlockFaceShape;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EntityLivingBase;
@@ -64,9 +63,7 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
 
     public boolean canPlaceBlockAt(World worldIn, BlockPos pos)
     {
-        FluidState fluidState = FluidloggedUtils.getFluidState(worldIn, pos);
-        boolean canPlaceFluid = fluidState.isEmpty() || isFluidValid(getDefaultState(), worldIn, pos, fluidState.getFluid());
-        return super.canPlaceBlockAt(worldIn, pos) && worldIn.isAirBlock(pos.up()) && canPlaceFluid;
+        return super.canPlaceBlockAt(worldIn, pos) && canPlaceDripleafPartAt(worldIn, pos) && canPlaceDripleafPartAt(worldIn, pos.up());
     }
 
     @Override
@@ -119,7 +116,7 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
 
     @Override
     public boolean canFluidFlow(@Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull EnumFacing side) {
-        return here.getBlockFaceShape(world, pos, side) != BlockFaceShape.SOLID;
+        return true;
     }
 
     @Override
@@ -167,14 +164,14 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
 
     public void placeAt(World worldIn, BlockPos lowerPos, EnumFacing facing, int flags)
     {
-        worldIn.setBlockState(lowerPos, this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.LOWER).withProperty(FACING, facing), flags);
-        worldIn.setBlockState(lowerPos.up(), this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.UPPER).withProperty(FACING, facing), flags);
+        setFluidloggableBlock(worldIn, lowerPos, this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.LOWER).withProperty(FACING, facing), flags);
+        setFluidloggableBlock(worldIn, lowerPos.up(), this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.UPPER).withProperty(FACING, facing), flags);
     }
 
     public void onBlockPlacedBy(World worldIn, BlockPos pos, IBlockState state, EntityLivingBase placer, ItemStack stack)
     {
         EnumFacing facing = state.getValue(FACING);
-        worldIn.setBlockState(pos.up(), this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.UPPER).withProperty(FACING, facing), 2);
+        setFluidloggableBlock(worldIn, pos.up(), this.getDefaultState().withProperty(HALF, BlockDoublePlant.EnumBlockHalf.UPPER).withProperty(FACING, facing), 2);
     }
 
     public void onBlockHarvested(World worldIn, BlockPos pos, IBlockState state, EntityPlayer player)
@@ -231,9 +228,7 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
 
         for(int j = 0; j <= 5; j++)
         {
-            Block up = worldIn.getBlockState(pos.up(j)).getBlock();
-
-            if(up == Blocks.AIR || up == ModBlocks.SMALL_DRIPLEAF)
+            if(canGrowThrough(worldIn, pos.up(j)))
             {
                 heigh ++;
             }
@@ -245,9 +240,41 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
 
         for(int k = 0; k <= i - 1; k++)
         {
-            worldIn.setBlockState(pos.up(k - dec), ModBlocks.DRIPLEAF_STEM.getDefaultState().withProperty(FACING, facing), 2);
+            setFluidloggableBlock(worldIn, pos.up(k - dec), ModBlocks.DRIPLEAF_STEM.getDefaultState().withProperty(FACING, facing), 2);
         }
-        worldIn.setBlockState(pos.up(i - dec), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, facing), 3);
+        setFluidloggableBlock(worldIn, pos.up(i - dec), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, facing), 3);
+    }
+
+    private boolean canPlaceDripleafPartAt(World world, BlockPos pos)
+    {
+        IBlockState state = world.getBlockState(pos);
+        FluidState fluidState = FluidloggedUtils.getFluidState(world, pos, state);
+        return state.getBlock() == Blocks.AIR || state.getMaterial() == Material.WATER || fluidState.getFluid() == FluidRegistry.WATER;
+    }
+
+    private boolean canGrowThrough(World world, BlockPos pos)
+    {
+        Block block = world.getBlockState(pos).getBlock();
+        return block == Blocks.AIR || block == ModBlocks.SMALL_DRIPLEAF || block == Blocks.WATER;
+    }
+
+    private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags)
+    {
+        if (hasWaterFluid(world, pos))
+        {
+            world.setBlockState(pos, newState, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+        }
+        else
+        {
+            world.setBlockState(pos, newState, flags);
+        }
+    }
+
+    private boolean hasWaterFluid(World world, BlockPos pos)
+    {
+        IBlockState state = world.getBlockState(pos);
+        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
     }
 
     public IBlockState getStateForPlacement(World worldIn, BlockPos pos, EnumFacing facing, float hitX, float hitY, float hitZ, int meta, EntityLivingBase placer)

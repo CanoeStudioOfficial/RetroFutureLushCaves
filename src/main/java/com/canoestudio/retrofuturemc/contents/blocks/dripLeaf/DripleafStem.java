@@ -14,7 +14,6 @@ import net.minecraft.block.IGrowable;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.properties.PropertyEnum;
-import net.minecraft.block.state.BlockFaceShape;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EntityLivingBase;
@@ -72,7 +71,7 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
             }
             else if (!hasDripleafAbove(worldIn, pos))
             {
-                worldIn.setBlockState(pos, ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, state.getValue(FACING)), 3);
+                setFluidloggableBlock(worldIn, pos, ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, state.getValue(FACING)), 3);
             }
         }
     }
@@ -191,7 +190,7 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
 
     @Override
     public boolean canFluidFlow(@Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull EnumFacing side) {
-        return here.getBlockFaceShape(world, pos, side) != BlockFaceShape.SOLID;
+        return true;
     }
 
     @Override
@@ -214,16 +213,40 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
         EnumFacing facing = topState.getValue(FACING);
         
         BlockPos aboveTop = topPos.up();
-        IBlockState aboveState = worldIn.getBlockState(aboveTop);
         
-        if (aboveState.getBlock().isReplaceable(worldIn, aboveTop) || aboveState.getBlock() == Blocks.AIR)
+        if (canGrowInto(worldIn, aboveTop))
         {
             if (topState.getBlock() == ModBlocks.BIG_DRIPLEAF)
             {
-                worldIn.setBlockState(topPos, this.getDefaultState().withProperty(FACING, facing), 2);
+                setFluidloggableBlock(worldIn, topPos, this.getDefaultState().withProperty(FACING, facing), 2);
             }
-            worldIn.setBlockState(aboveTop, ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, facing), 3);
+            setFluidloggableBlock(worldIn, aboveTop, ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(FACING, facing), 3);
         }
+    }
+
+    private boolean canGrowInto(World world, BlockPos pos)
+    {
+        IBlockState state = world.getBlockState(pos);
+        return state.getBlock().isReplaceable(world, pos) || state.getBlock() == Blocks.AIR || state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
+    }
+
+    private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags)
+    {
+        if (hasWaterFluid(world, pos))
+        {
+            world.setBlockState(pos, newState, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+        }
+        else
+        {
+            world.setBlockState(pos, newState, flags);
+        }
+    }
+
+    private boolean hasWaterFluid(World world, BlockPos pos)
+    {
+        IBlockState state = world.getBlockState(pos);
+        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
     }
 
     private BlockPos findTopPosition(World world, BlockPos pos)
