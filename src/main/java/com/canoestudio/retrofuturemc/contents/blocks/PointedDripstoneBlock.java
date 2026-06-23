@@ -2,6 +2,10 @@ package com.canoestudio.retrofuturemc.contents.blocks;
 
 import com.canoestudio.retrofuturemc.retrofuturemc.Tags;
 import com.google.common.base.Predicate;
+import git.jbredwards.fluidlogged_api.api.block.IFluidloggable;
+import git.jbredwards.fluidlogged_api.api.util.FluidState;
+import git.jbredwards.fluidlogged_api.api.util.FluidloggedUtils;
+import git.jbredwards.fluidlogged_api.api.world.IWorldProvider;
 import net.minecraft.block.Block;
 import net.minecraft.block.SoundType;
 import net.minecraft.block.material.Material;
@@ -24,14 +28,17 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fluids.Fluid;
+import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import javax.annotation.Nonnull;
 import java.util.Random;
 
 import static com.canoestudio.retrofuturemc.contents.tab.CreativeTab.CREATIVE_TABS;
 
-public class PointedDripstoneBlock extends Block {
+public class PointedDripstoneBlock extends Block implements IFluidloggable {
     public static final PropertyDirection VERTICAL_DIRECTION = PropertyDirection.create("vertical_direction", new Predicate<EnumFacing>() {
         @Override
         public boolean apply(EnumFacing input) {
@@ -112,11 +119,11 @@ public class PointedDripstoneBlock extends Block {
         for (int i = 0; i < length; i++) {
             BlockPos placePos = mutable.toImmutable();
 
-            if (!world.isAirBlock(placePos)) {
+            if (!isAirOrWater(world, placePos)) {
                 break;
             }
 
-            world.setBlockState(placePos, getDefaultState().withProperty(VERTICAL_DIRECTION, direction), flags);
+            setFluidloggableBlock(world, placePos, getDefaultState().withProperty(VERTICAL_DIRECTION, direction), flags);
             mutable.move(direction);
         }
 
@@ -143,7 +150,7 @@ public class PointedDripstoneBlock extends Block {
             IBlockState updated = here.withProperty(THICKNESS, getThickness(world, check, direction));
 
             if (updated != here) {
-                world.setBlockState(check, updated, 2);
+                setFluidloggableBlock(world, check, updated, 2);
             }
 
             check = check.offset(direction);
@@ -247,6 +254,47 @@ public class PointedDripstoneBlock extends Block {
     @Override
     public BlockFaceShape getBlockFaceShape(IBlockAccess worldIn, IBlockState state, BlockPos pos, EnumFacing face) {
         return BlockFaceShape.UNDEFINED;
+    }
+
+    @Override
+    public boolean isFluidValid(@Nonnull IBlockState state, @Nonnull World world, @Nonnull BlockPos pos, @Nonnull Fluid fluid) {
+        return FluidloggedUtils.isCompatibleFluid(FluidRegistry.WATER, fluid);
+    }
+
+    @Override
+    public boolean isFluidloggable(@Nonnull IBlockState state, @Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull FluidState fluidState) {
+        if (fluidState.isEmpty()) return true;
+        return isFluidValid(state, IWorldProvider.getWorld(world), pos, fluidState.getFluid())
+                && (fluidState.isSource() || fluidState.getActualHeight(world, pos) >= 1 && FluidloggedUtils.canCreateSource(fluidState.getState(), IWorldProvider.getWorld(world), pos));
+    }
+
+    @Override
+    public boolean canFluidFlow(@Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull EnumFacing side) {
+        return true;
+    }
+
+    @Override
+    public boolean overrideApplyDefaultsSetting() {
+        return true;
+    }
+
+    private boolean isAirOrWater(World world, BlockPos pos) {
+        IBlockState state = world.getBlockState(pos);
+        return state.getBlock() == Blocks.AIR || state.getMaterial() == Material.WATER;
+    }
+
+    private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags) {
+        if (hasWaterFluid(world, pos)) {
+            world.setBlockState(pos, newState, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+        } else {
+            world.setBlockState(pos, newState, flags);
+        }
+    }
+
+    private boolean hasWaterFluid(World world, BlockPos pos) {
+        IBlockState state = world.getBlockState(pos);
+        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
     }
 
     @Override
