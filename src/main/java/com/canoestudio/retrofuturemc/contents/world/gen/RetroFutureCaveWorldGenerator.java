@@ -31,7 +31,8 @@ import java.util.Random;
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_SIZE = 16;
     private static final int CHUNK_MARGIN = 5;
-    private static final int AZALEA_TREE_CHANCE = 5;
+    private static final int AZALEA_TREE_CHANCE = 18;
+    private static final int AZALEA_TREE_MIN_SPACING = 24;
 
     @Override
     public void generate(Random random, int chunkX, int chunkZ, World world, IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
@@ -44,7 +45,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         if (random.nextInt(AZALEA_TREE_CHANCE) == 0) {
             BlockPos azaleaTree = findSurfaceAzaleaTreePos(world, random, blockX, blockZ);
-            BlockPos lushCenter = azaleaTree == null ? null : findCavePocketBelowAzalea(world, random, azaleaTree, blockX, blockZ);
+            BlockPos lushCenter = azaleaTree == null || hasNearbyAzaleaTree(world, azaleaTree, AZALEA_TREE_MIN_SPACING) ? null : findCavePocketBelowAzalea(world, random, azaleaTree, blockX, blockZ);
 
             if (lushCenter != null && generateSurfaceAzaleaTree(world, random, azaleaTree)) {
                 placeRootTrail(world, random, azaleaTree, lushCenter);
@@ -75,6 +76,34 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
     private boolean generateSurfaceAzaleaTree(World world, Random random, BlockPos start) {
         return new WorldGenBigAzaleaTree(true).generate(world, random, start);
+    }
+
+    private boolean hasNearbyAzaleaTree(World world, BlockPos center, int radius) {
+        int minY = Math.max(1, center.getY() - 6);
+        int maxY = Math.min(world.getActualHeight() - 1, center.getY() + 16);
+        int radiusSq = radius * radius;
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                if (dx * dx + dz * dz > radiusSq) {
+                    continue;
+                }
+
+                for (int y = minY; y <= maxY; y++) {
+                    Block block = world.getBlockState(new BlockPos(center.getX() + dx, y, center.getZ() + dz)).getBlock();
+
+                    if (isAzaleaTreeBlock(block)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isAzaleaTreeBlock(Block block) {
+        return block == ModBlocks.Azalea_Leaves || block == ModBlocks.Flowering_Azalea_Leaves || block == ModBlocks.Azalea || block == ModBlocks.Flowering_Azalea;
     }
 
     private BlockPos findCavePocket(World world, Random random, int blockX, int blockZ, int minY, int maxY) {
