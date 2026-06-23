@@ -31,3 +31,12 @@ entity.retrofuturemc.axolotl.name=Axolotl
 entity.brown_mooshroom.name=Brown Mooshroom
 entity.retrofuturemc.brown_mooshroom.name=Brown Mooshroom
 entity.MushroomCow.name=Red Mooshroom
+
+subtitles.entity.axolotl.attack=Axolotl attacks
+subtitles.entity.axolotl.death=Axolotl dies
+subtitles.entity.axolotl.hurt=Axolotl hurts
+subtitles.entity.axolotl.idle_air=Axolotl chirps
+subtitles.entity.axolotl.idle_water=Axolotl chirps
+subtitles.entity.axolotl.splash=Axolotl splashes
+subtitles.entity.axolotl.swim=Axolotl swims
+subtitles.item.bucket.fill_axolotl=Axolotl scooped

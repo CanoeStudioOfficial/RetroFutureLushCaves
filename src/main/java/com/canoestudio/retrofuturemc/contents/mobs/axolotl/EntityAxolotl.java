@@ -7,7 +7,6 @@ import net.minecraft.entity.MoverType;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.passive.EntityWaterMob;
 import net.minecraft.init.MobEffects;
-import net.minecraft.init.SoundEvents;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.datasync.DataParameter;
 import net.minecraft.network.datasync.DataSerializers;
@@ -19,6 +18,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.World;
+import com.canoestudio.retrofuturemc.sounds.ModSoundHandler;
 
 import javax.annotation.Nullable;
 
@@ -27,6 +27,7 @@ public class EntityAxolotl extends EntityWaterMob {
     private static final DataParameter<Boolean> PLAYING_DEAD = EntityDataManager.createKey(EntityAxolotl.class, DataSerializers.BOOLEAN);
     private static final int MAX_AIR = 6000;
     private static final int TOTAL_PLAY_DEAD_TIME = 200;
+    private static final int ANIMATION_BLEND_TICKS = 10;
     private static final double WATER_IDLE_SPEED = 0.055D;
     private static final double WATER_MOVE_INERTIA = 0.16D;
     private static final double WATER_DRAG = 0.9D;
@@ -40,6 +41,11 @@ public class EntityAxolotl extends EntityWaterMob {
     private int targetCooldown;
     private int landHopCooldown;
     private int playDeadTicks;
+    private int swimPauseTicks;
+    private final AnimationFactor playingDeadAnimator = new AnimationFactor();
+    private final AnimationFactor inWaterAnimator = new AnimationFactor();
+    private final AnimationFactor onGroundAnimator = new AnimationFactor();
+    private final AnimationFactor movingAnimator = new AnimationFactor();
 
     public EntityAxolotl(World world) {
         super(world);
@@ -96,6 +102,22 @@ public class EntityAxolotl extends EntityWaterMob {
         dataManager.set(PLAYING_DEAD, playingDead);
     }
 
+    public float getPlayingDeadAnimationFactor(float partialTicks) {
+        return playingDeadAnimator.getFactor(partialTicks);
+    }
+
+    public float getInWaterAnimationFactor(float partialTicks) {
+        return inWaterAnimator.getFactor(partialTicks);
+    }
+
+    public float getOnGroundAnimationFactor(float partialTicks) {
+        return onGroundAnimator.getFactor(partialTicks);
+    }
+
+    public float getMovingAnimationFactor(float partialTicks) {
+        return movingAnimator.getFactor(partialTicks);
+    }
+
     @Override
     public void onEntityUpdate() {
         super.onEntityUpdate();
@@ -143,7 +165,29 @@ public class EntityAxolotl extends EntityWaterMob {
             }
         }
 
+        tickAnimationFactors();
         updateBodyRotation();
+    }
+
+    private void tickAnimationFactors() {
+        boolean playingDead = isPlayingDead();
+        boolean inWaterState = !playingDead && isInWater();
+        boolean onGroundState = !playingDead && !isInWater() && onGround;
+        boolean movingState = !playingDead && isMovingForAnimation();
+
+        playingDeadAnimator.tick(playingDead);
+        inWaterAnimator.tick(inWaterState);
+        onGroundAnimator.tick(onGroundState);
+        movingAnimator.tick(movingState);
+    }
+
+    private boolean isMovingForAnimation() {
+        double dx = posX - prevPosX;
+        double dy = posY - prevPosY;
+        double dz = posZ - prevPosZ;
+        double positionDelta = dx * dx + dy * dy + dz * dz;
+        double motionDelta = motionX * motionX + motionY * motionY + motionZ * motionZ;
+        return positionDelta > 1.0E-5D || motionDelta > 6.0E-5D || rotationYaw != prevRotationYaw || rotationPitch != prevRotationPitch;
     }
 
     private void updatePlayDeadState() {
@@ -157,13 +201,28 @@ public class EntityAxolotl extends EntityWaterMob {
     }
 
     private void updateWaterMovement() {
+        if (swimPauseTicks > 0) {
+            swimPauseTicks--;
+            motionX *= 0.94D;
+            motionY *= 0.94D;
+            motionZ *= 0.94D;
+            limitMotion(0.08D, 0.05D);
+            return;
+        }
+
         if (targetCooldown > 0) {
             targetCooldown--;
         }
 
         if (swimTarget == null || targetCooldown <= 0 || !isWater(swimTarget) || getDistanceSqToTargetCenter(swimTarget) < 1.2D) {
-            swimTarget = findRandomWaterTarget();
-            targetCooldown = 35 + rand.nextInt(45);
+            if (rand.nextInt(4) == 0) {
+                swimTarget = null;
+                swimPauseTicks = 18 + rand.nextInt(35);
+                targetCooldown = swimPauseTicks;
+            } else {
+                swimTarget = findRandomWaterTarget();
+                targetCooldown = 35 + rand.nextInt(55);
+            }
         }
 
         if (swimTarget != null) {
@@ -301,6 +360,29 @@ public class EntityAxolotl extends EntityWaterMob {
         return dx * dx + dy * dy + dz * dz;
     }
 
+    private static class AnimationFactor {
+        private int ticks;
+        private int ticksOld;
+
+        private void tick(boolean active) {
+            ticksOld = ticks;
+
+            if (active) {
+                if (ticks < ANIMATION_BLEND_TICKS) {
+                    ticks++;
+                }
+            } else if (ticks > 0) {
+                ticks--;
+            }
+        }
+
+        private float getFactor(float partialTicks) {
+            float tick = ticksOld + (ticks - ticksOld) * MathHelper.clamp(partialTicks, 0.0F, 1.0F);
+            float linear = MathHelper.clamp(tick / (float)ANIMATION_BLEND_TICKS, 0.0F, 1.0F);
+            return (1.0F - MathHelper.cos(linear * (float)Math.PI)) * 0.5F;
+        }
+    }
+
     private void updateBodyRotation() {
         double horizontalMotion = motionX * motionX + motionZ * motionZ;
 
@@ -410,22 +492,32 @@ public class EntityAxolotl extends EntityWaterMob {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return isPlayingDead() ? null : isInWater() ? SoundEvents.ENTITY_SQUID_AMBIENT : null;
+        return isPlayingDead() ? null : isInWater() ? ModSoundHandler.ENTITY_AXOLOTL_IDLE_WATER : ModSoundHandler.ENTITY_AXOLOTL_IDLE_AIR;
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSourceIn) {
-        return SoundEvents.ENTITY_SQUID_HURT;
+        return ModSoundHandler.ENTITY_AXOLOTL_HURT;
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.ENTITY_SQUID_DEATH;
+        return ModSoundHandler.ENTITY_AXOLOTL_DEATH;
+    }
+
+    @Override
+    protected SoundEvent getSwimSound() {
+        return ModSoundHandler.ENTITY_AXOLOTL_SWIM;
+    }
+
+    @Override
+    protected SoundEvent getSplashSound() {
+        return ModSoundHandler.ENTITY_AXOLOTL_SPLASH;
     }
 
     @Override
     protected float getSoundVolume() {
-        return 0.35F;
+        return 1.0F;
     }
 
     @Override

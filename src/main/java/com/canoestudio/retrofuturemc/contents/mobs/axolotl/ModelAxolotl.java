@@ -84,15 +84,29 @@ public class ModelAxolotl extends ModelBase {
         resetRotations();
 
         EntityAxolotl axolotl = entityIn instanceof EntityAxolotl ? (EntityAxolotl)entityIn : null;
-        float playingDeadFactor = axolotl != null && axolotl.isPlayingDead() ? 1.0F : 0.0F;
-        float inWaterFactor = playingDeadFactor == 0.0F && entityIn.isInWater() ? 1.0F : 0.0F;
-        float onGroundFactor = playingDeadFactor == 0.0F && !entityIn.isInWater() && entityIn.onGround ? 1.0F : 0.0F;
-        double horizontalMotion = entityIn.motionX * entityIn.motionX + entityIn.motionZ * entityIn.motionZ;
-        float movingFactor = horizontalMotion > 7.5E-5D || limbSwingAmount > 0.01F ? 1.0F : 0.0F;
-        float notMovingFactor = 1.0F - movingFactor;
+        float partialTicks = MathHelper.clamp(ageInTicks - (float)entityIn.ticksExisted, 0.0F, 1.0F);
+        float playingDeadFactor;
+        float inWaterFactor;
+        float onGroundFactor;
+        float movingFactor;
+
+        if (axolotl != null) {
+            playingDeadFactor = axolotl.getPlayingDeadAnimationFactor(partialTicks);
+            inWaterFactor = axolotl.getInWaterAnimationFactor(partialTicks);
+            onGroundFactor = axolotl.getOnGroundAnimationFactor(partialTicks);
+            movingFactor = Math.max(axolotl.getMovingAnimationFactor(partialTicks), MathHelper.clamp(limbSwingAmount, 0.0F, 1.0F));
+        } else {
+            playingDeadFactor = 0.0F;
+            inWaterFactor = entityIn.isInWater() ? 1.0F : 0.0F;
+            onGroundFactor = !entityIn.isInWater() && entityIn.onGround ? 1.0F : 0.0F;
+            double horizontalMotion = entityIn.motionX * entityIn.motionX + entityIn.motionZ * entityIn.motionZ;
+            movingFactor = horizontalMotion > 7.5E-5D || limbSwingAmount > 0.01F ? 1.0F : 0.0F;
+        }
+
+        float notMovingFactor = MathHelper.clamp(1.0F - movingFactor, 0.0F, 1.0F);
         float mirroredLegsFactor = 1.0F - Math.min(onGroundFactor, movingFactor);
 
-        body.rotateAngleY += netHeadYaw * 0.017453292F;
+        body.rotateAngleY += netHeadYaw * 0.017453292F * 0.35F;
         setupSwimmingAnimation(ageInTicks, headPitch, Math.min(movingFactor, inWaterFactor));
         setupWaterHoveringAnimation(ageInTicks, Math.min(notMovingFactor, inWaterFactor));
         setupGroundCrawlingAnimation(ageInTicks, Math.min(movingFactor, onGroundFactor));

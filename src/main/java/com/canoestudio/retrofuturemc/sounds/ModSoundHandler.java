@@ -107,6 +107,16 @@ public class ModSoundHandler {
     public static SoundEvent BLOCK_BIG_DRIPLEAF_HIT = new ModSoundEvent("block.big_dripleaf.hit");
     public static SoundEvent BLOCK_BIG_DRIPLEAF_FALL = new ModSoundEvent("block.big_dripleaf.fall");
 
+    public static SoundEvent ENTITY_AXOLOTL_ATTACK = new ModSoundEvent("entity.axolotl.attack");
+    public static SoundEvent ENTITY_AXOLOTL_DEATH = new ModSoundEvent("entity.axolotl.death");
+    public static SoundEvent ENTITY_AXOLOTL_HURT = new ModSoundEvent("entity.axolotl.hurt");
+    public static SoundEvent ENTITY_AXOLOTL_IDLE_AIR = new ModSoundEvent("entity.axolotl.idle_air");
+    public static SoundEvent ENTITY_AXOLOTL_IDLE_WATER = new ModSoundEvent("entity.axolotl.idle_water");
+    public static SoundEvent ENTITY_AXOLOTL_SPLASH = new ModSoundEvent("entity.axolotl.splash");
+    public static SoundEvent ENTITY_AXOLOTL_SWIM = new ModSoundEvent("entity.axolotl.swim");
+    public static SoundEvent ITEM_BUCKET_EMPTY_AXOLOTL = new ModSoundEvent("item.bucket.empty_axolotl");
+    public static SoundEvent ITEM_BUCKET_FILL_AXOLOTL = new ModSoundEvent("item.bucket.fill_axolotl");
+
     public static void soundRegister()
     {
         ForgeRegistries.SOUND_EVENTS.registerAll(ModSoundHandler.SOUNDS.toArray(new SoundEvent[0]));

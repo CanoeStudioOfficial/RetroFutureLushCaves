@@ -31,3 +31,12 @@ entity.retrofuturemc.axolotl.name=美西螈
 entity.brown_mooshroom.name=棕色哞菇
 entity.retrofuturemc.brown_mooshroom.name=棕色哞菇
 entity.MushroomCow.name=红色哞菇
+
+subtitles.entity.axolotl.attack=美西螈攻击
+subtitles.entity.axolotl.death=美西螈死亡
+subtitles.entity.axolotl.hurt=美西螈受伤
+subtitles.entity.axolotl.idle_air=美西螈鸣叫
+subtitles.entity.axolotl.idle_water=美西螈鸣叫
+subtitles.entity.axolotl.splash=美西螈溅水
+subtitles.entity.axolotl.swim=美西螈游泳
+subtitles.item.bucket.fill_axolotl=美西螈被舀起
