@@ -33,6 +33,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_MARGIN = 5;
     private static final int AZALEA_TREE_CHANCE = 18;
     private static final int AZALEA_TREE_MIN_SPACING = 24;
+    private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
+    private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
 
     @Override
     public void generate(Random random, int chunkX, int chunkZ, World world, IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
@@ -228,12 +230,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private void generateLushPocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
-        int radius = 5 + random.nextInt(2);
+        int radius = 11 + random.nextInt(6);
+        int verticalRadius = 6 + random.nextInt(3);
 
         for (int dx = -radius; dx <= radius; dx++) {
-            for (int dy = -3; dy <= 3; dy++) {
+            for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
-                    double distance = (dx * dx) / (double)(radius * radius) + (dy * dy) / 12.0D + (dz * dz) / (double)(radius * radius);
+                    double distance = (dx * dx) / (double)(radius * radius) + (dy * dy) / (double)(verticalRadius * verticalRadius) + (dz * dz) / (double)(radius * radius);
 
                     if (distance > 1.0D) {
                         continue;
@@ -241,18 +244,23 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = center.add(dx, dy, dz);
 
-                    if (!isInsideChunk(pos, blockX, blockZ)) {
+                    if (!isInsideChunk(pos, blockX, blockZ) || !isLushPatchNoise(world, pos, distance)) {
                         continue;
                     }
 
                     IBlockState state = world.getBlockState(pos);
 
-                    if (!isLushReplaceable(state.getBlock())) {
+                    if (!isLushReplaceable(state.getBlock()) || world.canSeeSky(pos)) {
                         continue;
                     }
 
-                    decorateLushFloor(world, random, pos, blockX, blockZ);
-                    decorateLushCeiling(world, random, pos);
+                    if (isAirOrWater(world, pos.up())) {
+                        decorateLushFloor(world, random, pos, blockX, blockZ);
+                    }
+
+                    if (world.isAirBlock(pos.down())) {
+                        decorateLushCeiling(world, random, pos);
+                    }
                 }
             }
         }
@@ -477,12 +485,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private void generateDripstonePocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
-        int radius = 3 + random.nextInt(3);
+        int radius = 10 + random.nextInt(7);
+        int verticalRadius = 7 + random.nextInt(4);
 
         for (int dx = -radius; dx <= radius; dx++) {
-            for (int dy = -4; dy <= 4; dy++) {
+            for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
-                    double distance = (dx * dx) / (double)(radius * radius) + (dy * dy) / 16.0D + (dz * dz) / (double)(radius * radius);
+                    double distance = (dx * dx) / (double)(radius * radius) + (dy * dy) / (double)(verticalRadius * verticalRadius) + (dz * dz) / (double)(radius * radius);
 
                     if (distance > 1.0D) {
                         continue;
@@ -490,25 +499,25 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = center.add(dx, dy, dz);
 
-                    if (!isInsideChunk(pos, blockX, blockZ)) {
+                    if (!isInsideChunk(pos, blockX, blockZ) || !isDripstonePatchNoise(world, pos, distance)) {
                         continue;
                     }
 
                     IBlockState state = world.getBlockState(pos);
 
-                    if (!isNaturalCaveBlock(state.getBlock())) {
+                    if (!isNaturalCaveBlock(state.getBlock()) || world.canSeeSky(pos)) {
                         continue;
                     }
 
-                    if (random.nextInt(100) < 28) {
+                    if ((world.isAirBlock(pos.down()) || world.isAirBlock(pos.up())) && random.nextInt(100) < 46) {
                         world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
                     }
 
-                    if (world.isAirBlock(pos.down()) && random.nextInt(100) < 26) {
+                    if (world.isAirBlock(pos.down()) && random.nextInt(100) < 42) {
                         placePointedDripstone(world, random, pos.down(), EnumFacing.DOWN);
                     }
 
-                    if (world.isAirBlock(pos.up()) && random.nextInt(100) < 18) {
+                    if (world.isAirBlock(pos.up()) && random.nextInt(100) < 30) {
                         placePointedDripstone(world, random, pos.up(), EnumFacing.UP);
                     }
                 }
@@ -539,6 +548,67 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
     private boolean isInsideChunk(BlockPos pos, int blockX, int blockZ) {
         return pos.getX() >= blockX && pos.getX() < blockX + CHUNK_SIZE && pos.getZ() >= blockZ && pos.getZ() < blockZ + CHUNK_SIZE;
+    }
+
+    private boolean isLushPatchNoise(World world, BlockPos pos, double normalizedDistance) {
+        double main = smoothNoise(world.getSeed() ^ LUSH_PATCH_SALT, pos.getX() * 0.055D, pos.getY() * 0.08D, pos.getZ() * 0.055D);
+        double detail = smoothNoise(world.getSeed() ^ (LUSH_PATCH_SALT << 1), pos.getX() * 0.13D, pos.getY() * 0.18D, pos.getZ() * 0.13D);
+        double edgeFalloff = 1.0D - normalizedDistance;
+        return main * 0.7D + detail * 0.3D + edgeFalloff * 0.55D > -0.18D;
+    }
+
+    private boolean isDripstonePatchNoise(World world, BlockPos pos, double normalizedDistance) {
+        double main = smoothNoise(world.getSeed() ^ DRIPSTONE_PATCH_SALT, pos.getX() * 0.06D, pos.getY() * 0.09D, pos.getZ() * 0.06D);
+        double ridged = 1.0D - Math.abs(smoothNoise(world.getSeed() ^ (DRIPSTONE_PATCH_SALT << 1), pos.getX() * 0.11D, pos.getY() * 0.15D, pos.getZ() * 0.11D));
+        double edgeFalloff = 1.0D - normalizedDistance;
+        return main * 0.55D + ridged * 0.35D + edgeFalloff * 0.45D > -0.05D;
+    }
+
+    private double smoothNoise(long seed, double x, double y, double z) {
+        int x0 = floor(x);
+        int y0 = floor(y);
+        int z0 = floor(z);
+        int x1 = x0 + 1;
+        int y1 = y0 + 1;
+        int z1 = z0 + 1;
+        double tx = smoothstep(x - x0);
+        double ty = smoothstep(y - y0);
+        double tz = smoothstep(z - z0);
+
+        double x00 = lerp(tx, valueNoise(seed, x0, y0, z0), valueNoise(seed, x1, y0, z0));
+        double x10 = lerp(tx, valueNoise(seed, x0, y1, z0), valueNoise(seed, x1, y1, z0));
+        double x01 = lerp(tx, valueNoise(seed, x0, y0, z1), valueNoise(seed, x1, y0, z1));
+        double x11 = lerp(tx, valueNoise(seed, x0, y1, z1), valueNoise(seed, x1, y1, z1));
+        double y0Value = lerp(ty, x00, x10);
+        double y1Value = lerp(ty, x01, x11);
+
+        return lerp(tz, y0Value, y1Value);
+    }
+
+    private double valueNoise(long seed, int x, int y, int z) {
+        long hash = seed;
+        hash ^= x * 341873128712L;
+        hash ^= y * 132897987541L;
+        hash ^= z * 42317861L;
+        hash ^= hash >> 33;
+        hash *= 0xff51afd7ed558ccdL;
+        hash ^= hash >> 33;
+        hash *= 0xc4ceb9fe1a85ec53L;
+        hash ^= hash >> 33;
+        return ((hash >>> 11) * 0x1.0p-53D) * 2.0D - 1.0D;
+    }
+
+    private int floor(double value) {
+        int integer = (int)value;
+        return value < integer ? integer - 1 : integer;
+    }
+
+    private double smoothstep(double value) {
+        return value * value * (3.0D - 2.0D * value);
+    }
+
+    private double lerp(double factor, double from, double to) {
+        return from + factor * (to - from);
     }
 
     private boolean isLushReplaceable(Block block) {

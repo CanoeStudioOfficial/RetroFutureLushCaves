@@ -11,7 +11,7 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "required-after:fluidlogged_api@[3.2.0,)")
+@Mod(modid = Tags.MOD_ID, name = Tags.MOD_NAME, version = Tags.VERSION, dependencies = "required-after:fluidlogged_api@[3.2.0,);required-after:bettercaves")
 public class RetroFuturemc {
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
 
