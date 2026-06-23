@@ -69,6 +69,13 @@ public class SmallDripleaf extends BlockBush implements IGrowable, IShearable, I
         return super.canPlaceBlockAt(worldIn, pos) && worldIn.isAirBlock(pos.up()) && canPlaceFluid;
     }
 
+    @Override
+    protected boolean canSustainBush(IBlockState state)
+    {
+        Block block = state.getBlock();
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || super.canSustainBush(state);
+    }
+
     public boolean isReplaceable(IBlockAccess worldIn, BlockPos pos) { return false; }
 
     @Override

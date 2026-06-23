@@ -106,6 +106,11 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
         {
             return true;
         }
+
+        if (canSustainDripleaf(downBlock))
+        {
+            return true;
+        }
         
         if (downBlock.canSustainPlant(downState, worldIn, pos.down(), EnumFacing.UP, this))
         {
@@ -129,8 +134,18 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
         {
             return true;
         }
+
+        if (canSustainDripleaf(downBlock))
+        {
+            return true;
+        }
         
         return downBlock.canSustainPlant(downState, worldIn, pos.down(), EnumFacing.UP, this);
+    }
+
+    private boolean canSustainDripleaf(Block block)
+    {
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT;
     }
 
     public boolean isReplaceable(IBlockAccess worldIn, BlockPos pos) { return false; }

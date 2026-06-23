@@ -4,6 +4,8 @@ import com.canoestudio.retrofuturemc.contents.blocks.ModBlocks;
 import com.canoestudio.retrofuturemc.contents.blocks.PointedDripstoneBlock;
 import com.canoestudio.retrofuturemc.contents.blocks.CaveVine.CaveVine;
 import com.canoestudio.retrofuturemc.contents.blocks.CaveVine.CaveVinePlant;
+import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.BigDripleaf;
+import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.DripleafStem;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.SmallDripleaf;
 import com.canoestudio.retrofuturemc.contents.mobs.axolotl.EntityAxolotl;
 import net.minecraft.block.Block;
@@ -25,7 +27,7 @@ import java.util.Random;
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_SIZE = 16;
     private static final int CHUNK_MARGIN = 5;
-    private static final int AZALEA_TREE_CHANCE = 9;
+    private static final int AZALEA_TREE_CHANCE = 5;
 
     @Override
     public void generate(Random random, int chunkX, int chunkZ, World world, IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
@@ -56,13 +58,15 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private BlockPos findSurfaceAzaleaTreePos(World world, Random random, int blockX, int blockZ) {
-        BlockPos start = world.getHeight(new BlockPos(blockX + 7 + random.nextInt(2), 0, blockZ + 7 + random.nextInt(2)));
+        for (int attempt = 0; attempt < 6; attempt++) {
+            BlockPos start = world.getHeight(new BlockPos(blockX + 6 + random.nextInt(4), 0, blockZ + 6 + random.nextInt(4)));
 
-        if (start.getY() < 50 || start.getY() > world.getActualHeight() - 16) {
-            return null;
+            if (start.getY() >= 50 && start.getY() <= world.getActualHeight() - 16) {
+                return start;
+            }
         }
 
-        return start;
+        return null;
     }
 
     private boolean generateSurfaceAzaleaTree(World world, Random random, BlockPos start) {
@@ -85,25 +89,41 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private BlockPos findCavePocketBelowAzalea(World world, Random random, BlockPos azaleaTree, int blockX, int blockZ) {
-        int minY = 12;
-        int maxY = Math.min(56, azaleaTree.getY() - 8);
+        int minY = 8;
+        int maxY = Math.min(58, azaleaTree.getY() - 8);
 
         if (maxY <= minY) {
             return null;
         }
 
-        for (int attempt = 0; attempt < 40; attempt++) {
+        for (int attempt = 0; attempt < 96; attempt++) {
             BlockPos pos = new BlockPos(
-                    azaleaTree.getX() + random.nextInt(7) - 3,
+                    azaleaTree.getX() + random.nextInt(9) - 4,
                     minY + random.nextInt(maxY - minY),
-                    azaleaTree.getZ() + random.nextInt(7) - 3);
+                    azaleaTree.getZ() + random.nextInt(9) - 4);
 
             if (!isInsideChunk(pos, blockX, blockZ)) {
                 continue;
             }
 
-            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 4)) {
+            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ)) {
                 return pos;
+            }
+        }
+
+        for (int y = maxY; y >= minY; y--) {
+            for (int dx = -4; dx <= 4; dx++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    if (Math.abs(dx) + Math.abs(dz) > 6) {
+                        continue;
+                    }
+
+                    BlockPos pos = new BlockPos(azaleaTree.getX() + dx, y, azaleaTree.getZ() + dz);
+
+                    if (isInsideChunk(pos, blockX, blockZ) && world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ)) {
+                        return pos;
+                    }
+                }
             }
         }
 
@@ -114,15 +134,28 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         int bottomY = Math.max(lushCenter.getY() + 2, 4);
 
         for (int y = azaleaTree.getY() - 2; y >= bottomY; y--) {
-            BlockPos pos = new BlockPos(azaleaTree.getX(), y, azaleaTree.getZ());
-            Block block = world.getBlockState(pos).getBlock();
+            int spread = y - lushCenter.getY() < 14 ? 2 : 1;
 
-            if (block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.STONE || block == Blocks.GRAVEL || block == ModBlocks.MOSS_BLOCK) {
-                if (random.nextInt(4) != 0) {
-                    world.setBlockState(pos, ModBlocks.ROOTED_DIRT.getDefaultState(), 2);
+            for (int dx = -spread; dx <= spread; dx++) {
+                for (int dz = -spread; dz <= spread; dz++) {
+                    if (Math.abs(dx) + Math.abs(dz) > spread + 1 || random.nextInt(100) >= 48) {
+                        continue;
+                    }
+
+                    BlockPos pos = new BlockPos(azaleaTree.getX() + dx, y, azaleaTree.getZ() + dz);
+                    Block block = world.getBlockState(pos).getBlock();
+
+                    if (block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.STONE || block == Blocks.GRAVEL || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.DeepSlate) {
+                        world.setBlockState(pos, ModBlocks.ROOTED_DIRT.getDefaultState(), 2);
+
+                        BlockPos rootPos = pos.down();
+                        if (world.isAirBlock(rootPos) && random.nextInt(100) < 55 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, rootPos)) {
+                            world.setBlockState(rootPos, ModBlocks.HANGING_ROOTS.getDefaultState(), 2);
+                        }
+                    } else if (world.isAirBlock(pos) && random.nextInt(100) < 35 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, pos)) {
+                        world.setBlockState(pos, ModBlocks.HANGING_ROOTS.getDefaultState(), 2);
+                    }
                 }
-            } else if (world.isAirBlock(pos) && random.nextInt(3) == 0 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, pos)) {
-                world.setBlockState(pos, ModBlocks.HANGING_ROOTS.getDefaultState(), 2);
             }
         }
     }
@@ -141,8 +174,28 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
+    private boolean hasNearbySolid(World world, BlockPos pos, int radius, int blockX, int blockZ) {
+        for (EnumFacing facing : EnumFacing.VALUES) {
+            for (int distance = 1; distance <= radius; distance++) {
+                BlockPos check = pos.offset(facing, distance);
+
+                if (!isInsideChunk(check, blockX, blockZ)) {
+                    continue;
+                }
+
+                IBlockState state = world.getBlockState(check);
+
+                if (isNaturalCaveBlock(state.getBlock()) || isLushReplaceable(state.getBlock())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private void generateLushPocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
-        int radius = 3 + random.nextInt(3);
+        int radius = 5 + random.nextInt(2);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -3; dy <= 3; dy++) {
@@ -181,10 +234,20 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (random.nextInt(100) < 82) {
+        if (random.nextInt(100) < 16 && tryPlaceClayPoolWithDripleaf(world, random, pos, above, blockX, blockZ)) {
+            return;
+        }
+
+        int groundRoll = random.nextInt(100);
+
+        if (groundRoll < 62) {
             world.setBlockState(pos, ModBlocks.MOSS_BLOCK.getDefaultState(), 2);
-        } else if (random.nextInt(100) < 18) {
+        } else if (groundRoll < 84) {
             world.setBlockState(pos, ModBlocks.ROOTED_DIRT.getDefaultState(), 2);
+        } else if (groundRoll < 94) {
+            world.setBlockState(pos, Blocks.CLAY.getDefaultState(), 2);
+        } else {
+            world.setBlockState(pos, ModBlocks.MOSS_BLOCK.getDefaultState(), 2);
         }
 
         if (!world.isAirBlock(above)) {
@@ -193,15 +256,86 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         int roll = random.nextInt(100);
 
-        if (roll < 15) {
+        if (roll < 28) {
             world.setBlockState(above, ModBlocks.MOSS_CARPET.getDefaultState(), 2);
-        } else if (roll < 19 && ModBlocks.Azalea.canPlaceBlockAt(world, above)) {
+        } else if (roll < 36 && ModBlocks.Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Azalea.getDefaultState(), 2);
-        } else if (roll < 22 && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
+        } else if (roll < 43 && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Flowering_Azalea.getDefaultState(), 2);
-        } else if (roll < 27 && isNearWater(world, above, 3, blockX, blockZ) && world.isAirBlock(above.up())) {
-            ((SmallDripleaf)ModBlocks.SMALL_DRIPLEAF).placeAt(world, above, EnumFacing.byHorizontalIndex(random.nextInt(4)), 2);
+        } else if (roll < 58 && isNearWater(world, above, 4, blockX, blockZ)) {
+            placeRandomDripleaf(world, random, above, blockX, blockZ);
         }
+    }
+
+    private boolean tryPlaceClayPoolWithDripleaf(World world, Random random, BlockPos floor, BlockPos above, int blockX, int blockZ) {
+        if (!world.isAirBlock(above) || !world.isAirBlock(above.up())) {
+            return false;
+        }
+
+        world.setBlockState(floor, Blocks.CLAY.getDefaultState(), 2);
+        boolean placedWater = false;
+
+        for (int i = 0; i < 4; i++) {
+            EnumFacing facing = EnumFacing.byHorizontalIndex((i + random.nextInt(4)) & 3);
+            BlockPos sideFloor = floor.offset(facing);
+
+            if (!isInsideChunk(sideFloor, blockX, blockZ) || !isLushReplaceable(world.getBlockState(sideFloor).getBlock())) {
+                continue;
+            }
+
+            world.setBlockState(sideFloor, Blocks.CLAY.getDefaultState(), 2);
+            BlockPos waterPos = sideFloor.up();
+
+            if (world.isAirBlock(waterPos) && random.nextInt(100) < 55) {
+                world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), 2);
+                placedWater = true;
+            }
+        }
+
+        if (placedWater || isNearWater(world, above, 4, blockX, blockZ)) {
+            placeRandomDripleaf(world, random, above, blockX, blockZ);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void placeRandomDripleaf(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+        if (random.nextInt(100) < 55 && placeBigDripleafColumn(world, random, basePos, blockX, blockZ)) {
+            return;
+        }
+
+        if (world.isAirBlock(basePos) && world.isAirBlock(basePos.up())) {
+            ((SmallDripleaf)ModBlocks.SMALL_DRIPLEAF).placeAt(world, basePos, EnumFacing.byHorizontalIndex(random.nextInt(4)), 2);
+        }
+    }
+
+    private boolean placeBigDripleafColumn(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+        if (!canSupportDripleaf(world.getBlockState(basePos.down()).getBlock())) {
+            return false;
+        }
+
+        int stemHeight = random.nextInt(3) == 0 ? 0 : random.nextInt(5);
+        EnumFacing facing = EnumFacing.byHorizontalIndex(random.nextInt(4));
+
+        for (int y = 0; y <= stemHeight; y++) {
+            BlockPos check = basePos.up(y);
+
+            if (!isInsideChunk(check, blockX, blockZ) || !world.isAirBlock(check)) {
+                return false;
+            }
+        }
+
+        for (int y = 0; y < stemHeight; y++) {
+            world.setBlockState(basePos.up(y), ModBlocks.DRIPLEAF_STEM.getDefaultState().withProperty(DripleafStem.FACING, facing), 2);
+        }
+
+        world.setBlockState(basePos.up(stemHeight), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(BigDripleaf.FACING, facing), 2);
+        return true;
+    }
+
+    private boolean canSupportDripleaf(Block block) {
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || block == Blocks.GRASS || block == Blocks.DIRT;
     }
 
     private void decorateLushCeiling(World world, Random random, BlockPos pos) {
@@ -211,17 +345,19 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (random.nextInt(100) < 8 && ModBlocks.SPORE_BLOSSOM.canPlaceBlockAt(world, below)) {
+        int roll = random.nextInt(100);
+
+        if (roll < 10 && ModBlocks.SPORE_BLOSSOM.canPlaceBlockAt(world, below)) {
             world.setBlockState(below, ModBlocks.SPORE_BLOSSOM.getDefaultState(), 2);
-        } else if (random.nextInt(100) < 14 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, below)) {
+        } else if (roll < 42 && ModBlocks.HANGING_ROOTS.canPlaceBlockAt(world, below)) {
             world.setBlockState(below, ModBlocks.HANGING_ROOTS.getDefaultState(), 2);
-        } else if (random.nextInt(100) < 20) {
+        } else if (roll < 72) {
             placeCaveVine(world, random, below);
         }
     }
 
     private void placeCaveVine(World world, Random random, BlockPos start) {
-        int length = 2 + random.nextInt(5);
+        int length = 2 + random.nextInt(8);
 
         for (int i = 0; i < length; i++) {
             BlockPos pos = start.down(i);

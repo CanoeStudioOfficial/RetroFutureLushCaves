@@ -181,6 +181,11 @@ public class BigDripleaf extends BlockBush implements IGrowable, IFluidloggable 
         {
             return true;
         }
+
+        if (canSustainDripleaf(downBlock))
+        {
+            return true;
+        }
         
         if (downBlock.canSustainPlant(downState, worldIn, pos.down(), EnumFacing.UP, this))
         {
@@ -216,8 +221,18 @@ public class BigDripleaf extends BlockBush implements IGrowable, IFluidloggable 
         {
             return true;
         }
+
+        if (canSustainDripleaf(downBlock))
+        {
+            return true;
+        }
         
         return downBlock.canSustainPlant(downState, worldIn, pos.down(), EnumFacing.UP, this);
+    }
+
+    private boolean canSustainDripleaf(Block block)
+    {
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT;
     }
 
     public void onBlockAdded(World worldIn, BlockPos pos, IBlockState state)
