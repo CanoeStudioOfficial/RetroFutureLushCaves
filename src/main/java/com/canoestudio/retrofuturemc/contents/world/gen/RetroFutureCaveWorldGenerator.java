@@ -33,6 +33,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_MARGIN = 5;
     private static final int AZALEA_TREE_CHANCE = 18;
     private static final int AZALEA_TREE_MIN_SPACING = 24;
+    private static final int LUSH_CAVE_MIN_Y = 8;
+    private static final int LUSH_CAVE_MAX_Y = 62;
+    private static final double LUSH_REGION_SCALE = 0.012D;
+    private static final double LUSH_REGION_THRESHOLD = 0.18D;
+    private static final long LUSH_REGION_SALT = 0x4C5553485245474EL;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
 
@@ -45,13 +50,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         int blockX = chunkX * 16;
         int blockZ = chunkZ * 16;
 
-        if (random.nextInt(AZALEA_TREE_CHANCE) == 0) {
+        if (isLushRegionChunk(world, blockX, blockZ) && random.nextInt(AZALEA_TREE_CHANCE) == 0) {
             BlockPos azaleaTree = findSurfaceAzaleaTreePos(world, random, blockX, blockZ);
             BlockPos lushCenter = azaleaTree == null || hasNearbyAzaleaTree(world, azaleaTree, AZALEA_TREE_MIN_SPACING) ? null : findCavePocketBelowAzalea(world, random, azaleaTree, blockX, blockZ);
 
             if (lushCenter != null && generateSurfaceAzaleaTree(world, random, azaleaTree)) {
                 placeRootTrail(world, random, azaleaTree, lushCenter);
-                generateLushPocket(world, random, lushCenter, blockX, blockZ);
+                generateLushPocket(world, random, azaleaTree, lushCenter, blockX, blockZ);
             }
         }
 
@@ -65,10 +70,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private BlockPos findSurfaceAzaleaTreePos(World world, Random random, int blockX, int blockZ) {
-        for (int attempt = 0; attempt < 6; attempt++) {
-            BlockPos start = world.getHeight(new BlockPos(blockX + 6 + random.nextInt(4), 0, blockZ + 6 + random.nextInt(4)));
+        for (int attempt = 0; attempt < 10; attempt++) {
+            BlockPos start = world.getHeight(new BlockPos(blockX + random.nextInt(CHUNK_SIZE), 0, blockZ + random.nextInt(CHUNK_SIZE)));
 
-            if (start.getY() >= 50 && start.getY() <= world.getActualHeight() - 16) {
+            if (start.getY() >= 50 && start.getY() <= world.getActualHeight() - 16 && isLushRegionColumn(world, start.getX(), start.getZ())) {
                 return start;
             }
         }
@@ -124,38 +129,38 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private BlockPos findCavePocketBelowAzalea(World world, Random random, BlockPos azaleaTree, int blockX, int blockZ) {
-        int minY = 8;
-        int maxY = Math.min(58, azaleaTree.getY() - 8);
+        int minY = LUSH_CAVE_MIN_Y;
+        int maxY = Math.min(LUSH_CAVE_MAX_Y, azaleaTree.getY() - 8);
 
         if (maxY <= minY) {
             return null;
         }
 
-        for (int attempt = 0; attempt < 96; attempt++) {
+        for (int attempt = 0; attempt < 144; attempt++) {
             BlockPos pos = new BlockPos(
-                    azaleaTree.getX() + random.nextInt(9) - 4,
+                    azaleaTree.getX() + random.nextInt(21) - 10,
                     minY + random.nextInt(maxY - minY),
-                    azaleaTree.getZ() + random.nextInt(9) - 4);
+                    azaleaTree.getZ() + random.nextInt(21) - 10);
 
             if (!isInsideChunk(pos, blockX, blockZ)) {
                 continue;
             }
 
-            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ)) {
+            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ) && isLushCaveRegion(world, pos, azaleaTree)) {
                 return pos;
             }
         }
 
         for (int y = maxY; y >= minY; y--) {
-            for (int dx = -4; dx <= 4; dx++) {
-                for (int dz = -4; dz <= 4; dz++) {
-                    if (Math.abs(dx) + Math.abs(dz) > 6) {
+            for (int dx = -12; dx <= 12; dx++) {
+                for (int dz = -12; dz <= 12; dz++) {
+                    if (Math.abs(dx) + Math.abs(dz) > 18) {
                         continue;
                     }
 
                     BlockPos pos = new BlockPos(azaleaTree.getX() + dx, y, azaleaTree.getZ() + dz);
 
-                    if (isInsideChunk(pos, blockX, blockZ) && world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ)) {
+                    if (isInsideChunk(pos, blockX, blockZ) && world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ) && isLushCaveRegion(world, pos, azaleaTree)) {
                         return pos;
                     }
                 }
@@ -229,9 +234,9 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private void generateLushPocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
-        int radius = 11 + random.nextInt(6);
-        int verticalRadius = 6 + random.nextInt(3);
+    private void generateLushPocket(World world, Random random, BlockPos azaleaTree, BlockPos center, int blockX, int blockZ) {
+        int radius = 18 + random.nextInt(7);
+        int verticalRadius = 10 + random.nextInt(5);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
@@ -244,7 +249,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = center.add(dx, dy, dz);
 
-                    if (!isInsideChunk(pos, blockX, blockZ) || !isLushPatchNoise(world, pos, distance)) {
+                    if (!isInsideChunk(pos, blockX, blockZ) || !isLushPatchNoise(world, pos, azaleaTree, distance)) {
                         continue;
                     }
 
@@ -550,11 +555,45 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return pos.getX() >= blockX && pos.getX() < blockX + CHUNK_SIZE && pos.getZ() >= blockZ && pos.getZ() < blockZ + CHUNK_SIZE;
     }
 
-    private boolean isLushPatchNoise(World world, BlockPos pos, double normalizedDistance) {
+    private boolean isLushRegionChunk(World world, int blockX, int blockZ) {
+        for (int dx = 4; dx < CHUNK_SIZE; dx += 4) {
+            for (int dz = 4; dz < CHUNK_SIZE; dz += 4) {
+                if (isLushRegionColumn(world, blockX + dx, blockZ + dz)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isLushRegionColumn(World world, int x, int z) {
+        double region = smoothNoise(world.getSeed() ^ LUSH_REGION_SALT, x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
+        double detail = smoothNoise(world.getSeed() ^ (LUSH_REGION_SALT << 1), x * 0.036D, 0.0D, z * 0.036D);
+        return region * 0.8D + detail * 0.2D > LUSH_REGION_THRESHOLD;
+    }
+
+    private boolean isLushCaveRegion(World world, BlockPos pos, BlockPos azaleaTree) {
+        double vertical = 1.0D - Math.min(1.0D, Math.abs(pos.getY() - 34.0D) / 42.0D);
+        double horizontalFalloff = horizontalFalloff(pos, azaleaTree, 44.0D);
+        double region = smoothNoise(world.getSeed() ^ LUSH_REGION_SALT, pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
+        double detail = smoothNoise(world.getSeed() ^ (LUSH_PATCH_SALT << 2), pos.getX() * 0.046D, pos.getY() * 0.05D, pos.getZ() * 0.046D);
+        return region * 0.65D + detail * 0.2D + vertical * 0.18D + horizontalFalloff * 0.42D > 0.12D;
+    }
+
+    private boolean isLushPatchNoise(World world, BlockPos pos, BlockPos azaleaTree, double normalizedDistance) {
         double main = smoothNoise(world.getSeed() ^ LUSH_PATCH_SALT, pos.getX() * 0.055D, pos.getY() * 0.08D, pos.getZ() * 0.055D);
         double detail = smoothNoise(world.getSeed() ^ (LUSH_PATCH_SALT << 1), pos.getX() * 0.13D, pos.getY() * 0.18D, pos.getZ() * 0.13D);
         double edgeFalloff = 1.0D - normalizedDistance;
-        return main * 0.7D + detail * 0.3D + edgeFalloff * 0.55D > -0.18D;
+        double horizontalFalloff = horizontalFalloff(pos, azaleaTree, 48.0D);
+        return isLushCaveRegion(world, pos, azaleaTree) && main * 0.55D + detail * 0.24D + edgeFalloff * 0.42D + horizontalFalloff * 0.35D > -0.08D;
+    }
+
+    private double horizontalFalloff(BlockPos pos, BlockPos center, double radius) {
+        double dx = pos.getX() - center.getX();
+        double dz = pos.getZ() - center.getZ();
+        double distanceSq = dx * dx + dz * dz;
+        return 1.0D - Math.min(1.0D, distanceSq / (radius * radius));
     }
 
     private boolean isDripstonePatchNoise(World world, BlockPos pos, double normalizedDistance) {
