@@ -1,0 +1,4 @@
+{
+  "parent": "retrofuturemc:block/pointed_dripstone",
+  "textures": { "cross": "retrofuturemc:blocks/pointed_dripstone_down_tip_merge" }
+}

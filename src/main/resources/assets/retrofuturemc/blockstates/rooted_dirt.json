@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "normal": [
+      { "model": "retrofuturemc:rooted_dirt" },
+      { "model": "retrofuturemc:rooted_dirt", "y": 90 },
+      { "model": "retrofuturemc:rooted_dirt", "y": 180 },
+      { "model": "retrofuturemc:rooted_dirt", "y": 270 }
+    ]
+  }
+}

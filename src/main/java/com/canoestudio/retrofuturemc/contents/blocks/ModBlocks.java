@@ -9,6 +9,8 @@ import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.DripleafStem;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.SmallDripleaf;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLeaves;
+import net.minecraft.block.SoundType;
+import net.minecraft.block.material.Material;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 
@@ -29,8 +31,8 @@ public class ModBlocks {
     public static final Block CAVE_VINE = new CaveVine("Cave_Vines");
 
     public static final BlockLeaves Azalea_Leaves = new LeafCreator("Azalea_Leaves");
-    public static final Block ROOTED_DIRT = Blocks.DIRT;
-    public static final Block HANGING_ROOTS = Blocks.DIRT;
+    public static final Block ROOTED_DIRT = new RootedDirtBlock();
+    public static final Block HANGING_ROOTS = new HangingRootsBlock();
     public static final Block MOSS_BLOCK = new MossCreator("Moss_Block");;
     public static final BlockLeaves Flowering_Azalea_Leaves = new LeafCreator("Flowering_Azalea_Leaves");
 
@@ -39,6 +41,9 @@ public class ModBlocks {
 
 
     public static final Block MOSS_CARPET = new MossCarpetCreator("Moss_Carpet");
+    public static final Block SPORE_BLOSSOM = new SporeBlossomBlock();
+    public static final Block DRIPSTONE_BLOCK = new SimpleBlockCreator("Dripstone_Block", Material.ROCK, SoundType.STONE, 1.5F, 3.0F, "pickaxe", 0);
+    public static final PointedDripstoneBlock POINTED_DRIPSTONE = new PointedDripstoneBlock();
 
     public static final Block PLAE_OAK_LOG = new LogCreator("Pale_Oak_Log", 2, 0, "axe");
     public static final Block PLAE_OAK_LEAVES = new LeafCreator("Pale_Oak_Leaves");

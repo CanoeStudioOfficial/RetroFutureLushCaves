@@ -8,14 +8,26 @@ tile.retrofuturemc.flowering_azalea_leaves.name=Flowering Azalea Leaves
 tile.retrofuturemc.big_dripleaf.name=Big Dripleaf
 tile.retrofuturemc.big_dripleaf_stem.name=Big Dripleaf Stem
 tile.retrofuturemc.small_dripleaf.name=Small Dripleaf
-tile.retrofuturemc.cave_vines.name=Cave Vine
-tile.retrofuturemc.cave_vines_plant.name=Cave Vine Plant
+tile.retrofuturemc.cave_vines.name=Cave Vines
+tile.retrofuturemc.cave_vines_plant.name=Cave Vines Plant
 tile.retrofuturemc.azalea.name=Azalea
 tile.retrofuturemc.flowering_azalea.name=Flowering Azalea
 tile.retrofuturemc.moss_block.name=Moss Block
+tile.retrofuturemc.moss_carpet.name=Moss Carpet
+tile.retrofuturemc.rooted_dirt.name=Rooted Dirt
+tile.retrofuturemc.hanging_roots.name=Hanging Roots
+tile.retrofuturemc.spore_blossom.name=Spore Blossom
+tile.retrofuturemc.dripstone_block.name=Dripstone Block
+tile.retrofuturemc.pointed_dripstone.name=Pointed Dripstone
+tile.retrofuturemc.pale_oak_log.name=Pale Oak Log
+tile.retrofuturemc.pale_oak_leaves.name=Pale Oak Leaves
+tile.retrofuturemc.pale_oak_planks.name=Pale Oak Planks
 
 item.retrofuturemc.glow_berries.name=Glow Berries
+item.retrofuturemc.spyglass.name=Spyglass
 
+entity.axolotl.name=Axolotl
+entity.retrofuturemc.axolotl.name=Axolotl
 entity.brown_mooshroom.name=Brown Mooshroom
-
+entity.retrofuturemc.brown_mooshroom.name=Brown Mooshroom
 entity.MushroomCow.name=Red Mooshroom

@@ -13,9 +13,21 @@ tile.retrofuturemc.cave_vines_plant.name=洞穴藤蔓植株
 tile.retrofuturemc.azalea.name=杜鹃花丛
 tile.retrofuturemc.flowering_azalea.name=盛开的杜鹃花丛
 tile.retrofuturemc.moss_block.name=苔藓块
+tile.retrofuturemc.moss_carpet.name=苔藓地毯
+tile.retrofuturemc.rooted_dirt.name=缠根泥土
+tile.retrofuturemc.hanging_roots.name=垂根
+tile.retrofuturemc.spore_blossom.name=孢子花
+tile.retrofuturemc.dripstone_block.name=滴水石块
+tile.retrofuturemc.pointed_dripstone.name=滴水石锥
+tile.retrofuturemc.pale_oak_log.name=苍白橡木原木
+tile.retrofuturemc.pale_oak_leaves.name=苍白橡树树叶
+tile.retrofuturemc.pale_oak_planks.name=苍白橡木木板
 
 item.retrofuturemc.glow_berries.name=发光浆果
+item.retrofuturemc.spyglass.name=望远镜
 
-entity.brown_mooshroom.name=棕色眸菇
-
-entity.MushroomCow.name=红色眸菇
+entity.axolotl.name=美西螈
+entity.retrofuturemc.axolotl.name=美西螈
+entity.brown_mooshroom.name=棕色哞菇
+entity.retrofuturemc.brown_mooshroom.name=棕色哞菇
+entity.MushroomCow.name=红色哞菇
