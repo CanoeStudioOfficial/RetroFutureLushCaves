@@ -23,6 +23,9 @@ import java.util.List;
 import java.util.Random;
 
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
+    private static final int CHUNK_SIZE = 16;
+    private static final int CHUNK_MARGIN = 5;
+
     @Override
     public void generate(Random random, int chunkX, int chunkZ, World world, IChunkGenerator chunkGenerator, IChunkProvider chunkProvider) {
         if (world.provider.getDimension() != 0) {
@@ -36,7 +39,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             BlockPos lushCenter = findCavePocket(world, random, blockX, blockZ, 12, 56);
 
             if (lushCenter != null) {
-                generateLushPocket(world, random, lushCenter);
+                generateLushPocket(world, random, lushCenter, blockX, blockZ);
             }
         }
 
@@ -44,14 +47,17 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             BlockPos dripstoneCenter = findCavePocket(world, random, blockX, blockZ, 8, 58);
 
             if (dripstoneCenter != null) {
-                generateDripstonePocket(world, random, dripstoneCenter);
+                generateDripstonePocket(world, random, dripstoneCenter, blockX, blockZ);
             }
         }
     }
 
     private BlockPos findCavePocket(World world, Random random, int blockX, int blockZ, int minY, int maxY) {
         for (int attempt = 0; attempt < 24; attempt++) {
-            BlockPos pos = new BlockPos(blockX + random.nextInt(16), minY + random.nextInt(maxY - minY), blockZ + random.nextInt(16));
+            BlockPos pos = new BlockPos(
+                    blockX + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2),
+                    minY + random.nextInt(maxY - minY),
+                    blockZ + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2));
 
             if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 4)) {
                 return pos;
@@ -75,8 +81,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private void generateLushPocket(World world, Random random, BlockPos center) {
-        int radius = 5 + random.nextInt(4);
+    private void generateLushPocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
+        int radius = 3 + random.nextInt(3);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -3; dy <= 3; dy++) {
@@ -88,22 +94,27 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                     }
 
                     BlockPos pos = center.add(dx, dy, dz);
+
+                    if (!isInsideChunk(pos, blockX, blockZ)) {
+                        continue;
+                    }
+
                     IBlockState state = world.getBlockState(pos);
 
                     if (!isLushReplaceable(state.getBlock())) {
                         continue;
                     }
 
-                    decorateLushFloor(world, random, pos);
+                    decorateLushFloor(world, random, pos, blockX, blockZ);
                     decorateLushCeiling(world, random, pos);
                 }
             }
         }
 
-        spawnAxolotlNearWater(world, random, center, radius + 1);
+        spawnAxolotlNearWater(world, random, center, radius + 1, blockX, blockZ);
     }
 
-    private void decorateLushFloor(World world, Random random, BlockPos pos) {
+    private void decorateLushFloor(World world, Random random, BlockPos pos, int blockX, int blockZ) {
         BlockPos above = pos.up();
 
         if (!world.isAirBlock(above)) {
@@ -128,7 +139,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             world.setBlockState(above, ModBlocks.Azalea.getDefaultState(), 2);
         } else if (roll < 22 && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Flowering_Azalea.getDefaultState(), 2);
-        } else if (roll < 27 && isNearWater(world, above, 3) && world.isAirBlock(above.up())) {
+        } else if (roll < 27 && isNearWater(world, above, 3, blockX, blockZ) && world.isAirBlock(above.up())) {
             ((SmallDripleaf)ModBlocks.SMALL_DRIPLEAF).placeAt(world, above, EnumFacing.byHorizontalIndex(random.nextInt(4)), 2);
         }
     }
@@ -171,12 +182,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
     }
 
-    private void spawnAxolotlNearWater(World world, Random random, BlockPos center, int radius) {
+    private void spawnAxolotlNearWater(World world, Random random, BlockPos center, int radius, int blockX, int blockZ) {
         if (random.nextInt(3) != 0) {
             return;
         }
 
-        AxisAlignedBB checkBox = new AxisAlignedBB(center).grow(radius);
+        AxisAlignedBB checkBox = new AxisAlignedBB(blockX, center.getY() - radius, blockZ, blockX + CHUNK_SIZE, center.getY() + radius, blockZ + CHUNK_SIZE);
         List<EntityAxolotl> existing = world.getEntitiesWithinAABB(EntityAxolotl.class, checkBox);
 
         if (!existing.isEmpty()) {
@@ -185,6 +196,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         for (int attempt = 0; attempt < 20; attempt++) {
             BlockPos pos = center.add(random.nextInt(radius * 2 + 1) - radius, random.nextInt(5) - 2, random.nextInt(radius * 2 + 1) - radius);
+
+            if (!isInsideChunk(pos, blockX, blockZ)) {
+                continue;
+            }
 
             if (world.getBlockState(pos).getMaterial() == Material.WATER && isLushReplaceable(world.getBlockState(pos.down()).getBlock())) {
                 EntityAxolotl axolotl = new EntityAxolotl(world);
@@ -196,8 +211,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
     }
 
-    private void generateDripstonePocket(World world, Random random, BlockPos center) {
-        int radius = 4 + random.nextInt(5);
+    private void generateDripstonePocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
+        int radius = 3 + random.nextInt(3);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -4; dy <= 4; dy++) {
@@ -209,6 +224,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                     }
 
                     BlockPos pos = center.add(dx, dy, dz);
+
+                    if (!isInsideChunk(pos, blockX, blockZ)) {
+                        continue;
+                    }
+
                     IBlockState state = world.getBlockState(pos);
 
                     if (!isNaturalCaveBlock(state.getBlock())) {
@@ -236,11 +256,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         ((PointedDripstoneBlock)ModBlocks.POINTED_DRIPSTONE).placeColumn(world, start, direction, length, 2);
     }
 
-    private boolean isNearWater(World world, BlockPos pos, int radius) {
+    private boolean isNearWater(World world, BlockPos pos, int radius, int blockX, int blockZ) {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 for (int dy = -1; dy <= 1; dy++) {
-                    if (world.getBlockState(pos.add(dx, dy, dz)).getMaterial() == Material.WATER) {
+                    BlockPos check = pos.add(dx, dy, dz);
+
+                    if (isInsideChunk(check, blockX, blockZ) && world.getBlockState(check).getMaterial() == Material.WATER) {
                         return true;
                     }
                 }
@@ -248,6 +270,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         return false;
+    }
+
+    private boolean isInsideChunk(BlockPos pos, int blockX, int blockZ) {
+        return pos.getX() >= blockX && pos.getX() < blockX + CHUNK_SIZE && pos.getZ() >= blockZ && pos.getZ() < blockZ + CHUNK_SIZE;
     }
 
     private boolean isLushReplaceable(Block block) {

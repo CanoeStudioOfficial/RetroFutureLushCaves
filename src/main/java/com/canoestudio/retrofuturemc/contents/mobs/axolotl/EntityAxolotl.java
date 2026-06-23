@@ -1,6 +1,7 @@
 package com.canoestudio.retrofuturemc.contents.mobs.axolotl;
 
 import net.minecraft.entity.IEntityLivingData;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.MoverType;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.passive.EntityWaterMob;
@@ -96,9 +97,11 @@ public class EntityAxolotl extends EntityWaterMob {
                 randomMotionSpeed = 0.7F + rand.nextFloat() * 0.35F;
             }
 
-            motionX = randomMotionVecX * randomMotionSpeed;
-            motionY = randomMotionVecY * randomMotionSpeed;
-            motionZ = randomMotionVecZ * randomMotionSpeed;
+            if (!world.isRemote) {
+                motionX = randomMotionVecX * randomMotionSpeed;
+                motionY = randomMotionVecY * randomMotionSpeed;
+                motionZ = randomMotionVecZ * randomMotionSpeed;
+            }
 
             float horizontal = MathHelper.sqrt(motionX * motionX + motionZ * motionZ);
             renderYawOffset += (-((float)MathHelper.atan2(motionX, motionZ)) * (180F / (float)Math.PI) - renderYawOffset) * 0.12F;
@@ -109,18 +112,39 @@ public class EntityAxolotl extends EntityWaterMob {
             randomMotionVecY = 0.0F;
             randomMotionVecZ = 0.0F;
 
-            if (onGround && rand.nextInt(20) == 0) {
-                motionX += (rand.nextDouble() - 0.5D) * 0.25D;
-                motionY = 0.25D;
-                motionZ += (rand.nextDouble() - 0.5D) * 0.25D;
-                rotationYaw = rand.nextFloat() * 360.0F;
+            if (!world.isRemote) {
+                motionX *= onGround ? 0.55D : 0.86D;
+                motionZ *= onGround ? 0.55D : 0.86D;
+
+                if (!hasNoGravity()) {
+                    motionY -= 0.08D;
+                }
+
+                if (onGround && rand.nextInt(18) == 0) {
+                    motionX += (rand.nextDouble() - 0.5D) * 0.16D;
+                    motionY = 0.18D;
+                    motionZ += (rand.nextDouble() - 0.5D) * 0.16D;
+                    rotationYaw = rand.nextFloat() * 360.0F;
+                }
+
+                motionY *= 0.9800000190734863D;
             }
+
+            rotationPitch += (0.0F - rotationPitch) * 0.18F;
         }
     }
 
     @Override
     public void travel(float strafe, float vertical, float forward) {
         move(MoverType.SELF, motionX, motionY, motionZ);
+    }
+
+    @Override
+    public void knockBack(Entity entityIn, float strength, double xRatio, double zRatio) {
+        super.knockBack(entityIn, isInWater() ? strength * 0.25F : strength * 0.35F, xRatio, zRatio);
+        motionX *= 0.45D;
+        motionY *= 0.45D;
+        motionZ *= 0.45D;
     }
 
     @Override
