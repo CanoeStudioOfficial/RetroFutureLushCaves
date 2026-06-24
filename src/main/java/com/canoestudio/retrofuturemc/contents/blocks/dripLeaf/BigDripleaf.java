@@ -231,7 +231,7 @@ public class BigDripleaf extends BlockBush implements IGrowable, IFluidloggable 
 
     private boolean canSustainDripleaf(Block block)
     {
-        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT;
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.MYCELIUM || block == Blocks.FARMLAND;
     }
 
     public void onBlockAdded(World worldIn, BlockPos pos, IBlockState state)

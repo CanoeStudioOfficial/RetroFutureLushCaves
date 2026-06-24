@@ -52,6 +52,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_LARGE_FEATURE_CHANCE = 24;
     private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 180;
     private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 72;
+    private static final int LUSH_CLAY_DRIPLEAF_PATCH_CHANCE = 8;
+    private static final int LUSH_DRIPLEAF_PATCH_RADIUS_MIN = 4;
+    private static final int LUSH_DRIPLEAF_PATCH_RADIUS_MAX = 7;
+    private static final int LUSH_DRIPLEAF_PATCH_BASE_DEPTH = 3;
+    private static final float LUSH_DRIPLEAF_PATCH_EXTRA_BOTTOM_CHANCE = 0.8F;
+    private static final float LUSH_DRIPLEAF_PATCH_EDGE_CHANCE = 0.7F;
+    private static final int LUSH_CLAY_PATCH_VERTICAL_RANGE = 2;
+    private static final int LUSH_CLAY_POOL_VERTICAL_RANGE = 5;
+    private static final float LUSH_CLAY_PATCH_VEGETATION_CHANCE = 0.05F;
+    private static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = -0.22D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
@@ -61,6 +71,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
     private static final int NO_SURFACE = -1;
+    private static final EnumFacing[] DRIPLEAF_FEATURE_FACINGS = new EnumFacing[] {EnumFacing.EAST, EnumFacing.WEST, EnumFacing.SOUTH, EnumFacing.NORTH};
     private BetterCavesConfig cachedBetterCavesConfig;
     private int cachedBetterCavesConfigDimension = Integer.MIN_VALUE;
     private Mojang118CaveDensitySampler cachedDensitySampler;
@@ -921,7 +932,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (random.nextInt(100) < 16 && tryPlaceClayPoolWithDripleaf(world, random, pos, above, blockX, blockZ)) {
+        if (world.getBlockState(pos).getBlock() == Blocks.CLAY) {
+            return;
+        }
+
+        if (random.nextInt(100) < LUSH_CLAY_DRIPLEAF_PATCH_CHANCE && tryPlaceClayPatchWithDripleaves(world, random, pos, blockX, blockZ)) {
             return;
         }
 
@@ -949,57 +964,174 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             world.setBlockState(above, ModBlocks.Azalea.getDefaultState(), 2);
         } else if (roll < 43 && world.isAirBlock(above) && ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, above)) {
             world.setBlockState(above, ModBlocks.Flowering_Azalea.getDefaultState(), 2);
-        } else if (roll < 58 && isNearWater(world, above, 4, blockX, blockZ)) {
-            placeRandomDripleaf(world, random, above, blockX, blockZ);
         }
     }
 
-    private boolean tryPlaceClayPoolWithDripleaf(World world, Random random, BlockPos floor, BlockPos above, int blockX, int blockZ) {
-        if (!isAirOrWater(world, above)) {
+    private boolean tryPlaceClayPatchWithDripleaves(World world, Random random, BlockPos originFloor, int blockX, int blockZ) {
+        boolean waterloggedPatch = random.nextBoolean();
+        int verticalRange = waterloggedPatch ? LUSH_CLAY_POOL_VERTICAL_RANGE : LUSH_CLAY_PATCH_VERTICAL_RANGE;
+        float vegetationChance = waterloggedPatch ? LUSH_CLAY_POOL_VEGETATION_CHANCE : LUSH_CLAY_PATCH_VEGETATION_CHANCE;
+        int xRadius = LUSH_DRIPLEAF_PATCH_RADIUS_MIN + random.nextInt(LUSH_DRIPLEAF_PATCH_RADIUS_MAX - LUSH_DRIPLEAF_PATCH_RADIUS_MIN + 1);
+        int zRadius = LUSH_DRIPLEAF_PATCH_RADIUS_MIN + random.nextInt(LUSH_DRIPLEAF_PATCH_RADIUS_MAX - LUSH_DRIPLEAF_PATCH_RADIUS_MIN + 1);
+        List<BlockPos> surfaceTargets = new ArrayList<BlockPos>();
+        boolean placedGround = false;
+
+        for (int dx = -xRadius; dx <= xRadius; dx++) {
+            boolean xEdge = dx == -xRadius || dx == xRadius;
+
+            for (int dz = -zRadius; dz <= zRadius; dz++) {
+                boolean zEdge = dz == -zRadius || dz == zRadius;
+                boolean corner = xEdge && zEdge;
+                boolean edge = xEdge || zEdge;
+
+                if (corner || edge && random.nextFloat() > LUSH_DRIPLEAF_PATCH_EDGE_CHANCE) {
+                    continue;
+                }
+
+                BlockPos surfaceFloor = findLushPatchFloor(world, originFloor.add(dx, 0, dz), verticalRange, blockX, blockZ);
+
+                if (surfaceFloor == null || surfaceTargets.contains(surfaceFloor)) {
+                    continue;
+                }
+
+                BlockPos openPos = surfaceFloor.up();
+
+                if (!waterloggedPatch && !world.isAirBlock(openPos)) {
+                    continue;
+                }
+
+                int depth = LUSH_DRIPLEAF_PATCH_BASE_DEPTH + (random.nextFloat() < LUSH_DRIPLEAF_PATCH_EXTRA_BOTTOM_CHANCE ? 1 : 0);
+
+                if (placeClayGround(world, surfaceFloor, depth)) {
+                    surfaceTargets.add(surfaceFloor);
+                    placedGround = true;
+                }
+            }
+        }
+
+        if (!placedGround) {
             return false;
         }
 
-        world.setBlockState(floor, Blocks.CLAY.getDefaultState(), 2);
-        boolean placedWater = false;
-        List<BlockPos> waterTargets = new ArrayList<BlockPos>();
+        if (waterloggedPatch) {
+            List<BlockPos> waterTargets = new ArrayList<BlockPos>();
 
-        for (int i = 0; i < 4; i++) {
-            EnumFacing facing = EnumFacing.byHorizontalIndex((i + random.nextInt(4)) & 3);
-            BlockPos sideFloor = floor.offset(facing);
+            for (BlockPos surfaceFloor : surfaceTargets) {
+                if (isClayPatchSurfaceExposed(world, surfaceFloor, blockX, blockZ) || isNearLava(world, surfaceFloor, 2, blockX, blockZ)) {
+                    continue;
+                }
 
-            if (!isInsideChunk(sideFloor, blockX, blockZ) || !isLushReplaceable(world.getBlockState(sideFloor).getBlock())) {
-                continue;
+                waterTargets.add(surfaceFloor);
             }
 
-            world.setBlockState(sideFloor, Blocks.CLAY.getDefaultState(), 2);
-            BlockPos waterPos = sideFloor.up();
+            for (BlockPos surfaceFloor : waterTargets) {
+                world.setBlockState(surfaceFloor, Blocks.WATER.getDefaultState(), 2);
 
-            if (world.isAirBlock(waterPos) && !isNearLava(world, waterPos, 2, blockX, blockZ) && random.nextInt(100) < 55) {
-                world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), 2);
-                waterTargets.add(waterPos);
-                placedWater = true;
+                if (random.nextFloat() < vegetationChance) {
+                    placeDripleafFeature(world, random, surfaceFloor, blockX, blockZ);
+                }
+            }
+        } else {
+            for (BlockPos surfaceFloor : surfaceTargets) {
+                BlockPos vegetationPos = surfaceFloor.up();
+
+                if (random.nextFloat() < vegetationChance) {
+                    placeDripleafFeature(world, random, vegetationPos, blockX, blockZ);
+                }
             }
         }
 
-        while (!waterTargets.isEmpty()) {
-            BlockPos target = waterTargets.remove(random.nextInt(waterTargets.size()));
+        return true;
+    }
 
-            if (placeRandomDripleaf(world, random, target, blockX, blockZ)) {
+    private BlockPos findLushPatchFloor(World world, BlockPos origin, int verticalRange, int blockX, int blockZ) {
+        if (!isInsideChunk(origin, blockX, blockZ)) {
+            return null;
+        }
+
+        BlockPos scan = origin;
+        int offset = 0;
+
+        while (offset < verticalRange && isInsideChunk(scan, blockX, blockZ) && isAirOrWater(world, scan)) {
+            scan = scan.down();
+            offset++;
+        }
+
+        offset = 0;
+
+        while (offset < verticalRange && isInsideChunk(scan, blockX, blockZ) && !isAirOrWater(world, scan)) {
+            scan = scan.up();
+            offset++;
+        }
+
+        if (!isInsideChunk(scan, blockX, blockZ) || !isAirOrWater(world, scan) || world.canSeeSky(scan)) {
+            return null;
+        }
+
+        BlockPos floor = scan.down();
+
+        if (!isInsideChunk(floor, blockX, blockZ) || world.canSeeSky(floor) || !isLushReplaceable(world.getBlockState(floor).getBlock()) || !world.isSideSolid(floor, EnumFacing.UP, true)) {
+            return null;
+        }
+
+        return floor;
+    }
+
+    private boolean placeClayGround(World world, BlockPos floor, int depth) {
+        boolean placedAny = false;
+
+        for (int i = 0; i < depth; i++) {
+            BlockPos groundPos = floor.down(i);
+
+            if (groundPos.getY() <= 0) {
+                break;
+            }
+
+            Block block = world.getBlockState(groundPos).getBlock();
+
+            if (block == Blocks.CLAY) {
+                placedAny = true;
+                continue;
+            }
+
+            if (!isLushReplaceable(block)) {
+                return placedAny;
+            }
+
+            world.setBlockState(groundPos, Blocks.CLAY.getDefaultState(), 2);
+            placedAny = true;
+        }
+
+        return placedAny;
+    }
+
+    private boolean isClayPatchSurfaceExposed(World world, BlockPos surfaceFloor, int blockX, int blockZ) {
+        for (EnumFacing facing : DRIPLEAF_FEATURE_FACINGS) {
+            if (!isSolidFace(world, surfaceFloor.offset(facing), facing.getOpposite(), blockX, blockZ)) {
                 return true;
             }
         }
 
-        if (placedWater || isNearWater(world, above, 4, blockX, blockZ)) {
-            placeRandomDripleaf(world, random, above, blockX, blockZ);
-            return true;
-        }
-
-        return false;
+        return !isSolidFace(world, surfaceFloor.down(), EnumFacing.UP, blockX, blockZ);
     }
 
-    private boolean placeRandomDripleaf(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
-        if (random.nextInt(100) < 55 && placeBigDripleafColumn(world, random, basePos, blockX, blockZ)) {
-            return true;
+    private boolean isSolidFace(World world, BlockPos pos, EnumFacing side, int blockX, int blockZ) {
+        return isInsideChunk(pos, blockX, blockZ) && world.getBlockState(pos).isSideSolid(world, pos, side);
+    }
+
+    private boolean placeDripleafFeature(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+        int choice = random.nextInt(5);
+
+        if (choice == 0) {
+            return placeSmallDripleaf(world, random, basePos, blockX, blockZ);
+        }
+
+        return placeBigDripleafColumn(world, random, basePos, DRIPLEAF_FEATURE_FACINGS[choice - 1], blockX, blockZ);
+    }
+
+    private boolean placeSmallDripleaf(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+        if (!canSupportSmallDripleaf(world.getBlockState(basePos.down()).getBlock())) {
+            return false;
         }
 
         if (canPlaceDripleafPartAt(world, basePos, blockX, blockZ) && canPlaceDripleafPartAt(world, basePos.up(), blockX, blockZ)) {
@@ -1010,20 +1142,31 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private boolean placeBigDripleafColumn(World world, Random random, BlockPos basePos, int blockX, int blockZ) {
+    private boolean placeBigDripleafColumn(World world, Random random, BlockPos basePos, EnumFacing facing, int blockX, int blockZ) {
         if (!canSupportDripleaf(world.getBlockState(basePos.down()).getBlock())) {
             return false;
         }
 
         int stemHeight = random.nextInt(3) == 0 ? 0 : random.nextInt(5);
-        EnumFacing facing = EnumFacing.byHorizontalIndex(random.nextInt(4));
+        int totalHeight = stemHeight + 1;
+        int availableHeight = 0;
 
-        for (int y = 0; y <= stemHeight; y++) {
+        for (int y = 0; y < totalHeight; y++) {
             BlockPos check = basePos.up(y);
 
             if (!canPlaceDripleafPartAt(world, check, blockX, blockZ)) {
-                return false;
+                break;
             }
+
+            availableHeight++;
+        }
+
+        if (availableHeight == 0) {
+            return false;
+        }
+
+        if (availableHeight < totalHeight) {
+            stemHeight = Math.max(0, availableHeight - 1);
         }
 
         for (int y = 0; y < stemHeight; y++) {
@@ -1058,7 +1201,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private boolean canSupportDripleaf(Block block) {
-        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || block == Blocks.GRASS || block == Blocks.DIRT;
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || block == Blocks.GRASS || block == Blocks.DIRT || block == Blocks.MYCELIUM || block == Blocks.FARMLAND;
+    }
+
+    private boolean canSupportSmallDripleaf(Block block) {
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK;
     }
 
     private void decorateLushCeiling(World world, Random random, BlockPos pos) {

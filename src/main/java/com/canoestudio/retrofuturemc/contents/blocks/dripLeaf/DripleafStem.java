@@ -144,7 +144,7 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
 
     private boolean canSustainDripleaf(Block block)
     {
-        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT;
+        return block == Blocks.CLAY || block == ModBlocks.MOSS_BLOCK || block == ModBlocks.ROOTED_DIRT || block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.MYCELIUM || block == Blocks.FARMLAND;
     }
 
     public boolean isReplaceable(IBlockAccess worldIn, BlockPos pos) { return false; }
