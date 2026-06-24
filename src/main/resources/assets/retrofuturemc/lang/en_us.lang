@@ -26,9 +26,6 @@ tile.retrofuturemc.pale_oak_planks.name=Pale Oak Planks
 item.retrofuturemc.glow_berries.name=Glow Berries
 item.retrofuturemc.spyglass.name=Spyglass
 
-biome.retrofuturemc.lush_caves=Lush Caves
-biome.retrofuturemc.dripstone_caves=Dripstone Caves
-
 entity.axolotl.name=Axolotl
 entity.retrofuturemc.axolotl.name=Axolotl
 entity.brown_mooshroom.name=Brown Mooshroom

@@ -8,7 +8,6 @@ import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.BigDripleaf;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.DripleafStem;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.SmallDripleaf;
 import com.canoestudio.retrofuturemc.contents.mobs.axolotl.EntityAxolotl;
-import com.canoestudio.retrofuturemc.contents.world.biome.ModCaveBiomes;
 import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesAPI;
 import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesConfig;
 import com.yungnickyoung.minecraft.bettercaves.noise.MojangNormalNoise;
@@ -52,11 +51,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 28;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = -0.06D;
-    private static final double LUSH_BIOME_THRESHOLD = 0.0D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
     private static final double DRIPSTONE_REGION_THRESHOLD = 0.12D;
-    private static final double DRIPSTONE_BIOME_THRESHOLD = 0.22D;
-    private static final double CAVE_BIOME_WIN_MARGIN = 0.04D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -474,52 +470,21 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private boolean isLushBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
-        return getUndergroundCaveBiome(context, pos) == ModCaveBiomes.LUSH_CAVES;
-    }
-
-    private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
-        return getUndergroundCaveBiome(context, pos) == ModCaveBiomes.DRIPSTONE_CAVES;
-    }
-
-    private Biome getUndergroundCaveBiome(CaveDensityContext context, BlockPos pos) {
-        if (!context.isDeepEnough(pos, Math.min(LUSH_MIN_SURFACE_DEPTH, DRIPSTONE_MIN_SURFACE_DEPTH)) || context.world.canSeeSky(pos)) {
-            return null;
-        }
-
-        double lushScore = getLushCaveBiomeScore(context, pos);
-        double dripstoneScore = getDripstoneCaveBiomeScore(context, pos);
-        double lushStrength = lushScore - LUSH_BIOME_THRESHOLD;
-        double dripstoneStrength = dripstoneScore - DRIPSTONE_BIOME_THRESHOLD;
-        boolean lush = lushStrength > 0.0D;
-        boolean dripstone = dripstoneStrength > 0.0D;
-
-        if (lush && (!dripstone || lushStrength >= dripstoneStrength - CAVE_BIOME_WIN_MARGIN)) {
-            return ModCaveBiomes.LUSH_CAVES;
-        }
-
-        if (dripstone) {
-            return ModCaveBiomes.DRIPSTONE_CAVES;
-        }
-
-        return null;
-    }
-
-    private double getLushCaveBiomeScore(CaveDensityContext context, BlockPos pos) {
         double vertical = 1.0D - Math.min(1.0D, Math.abs(pos.getY() - 34.0D) / 42.0D);
         double region = context.biomeNoise.lushRegion.getValue(pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 0.065D, pos.getY() * 0.085D, pos.getZ() * 0.065D);
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D;
+        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > 0.0D;
     }
 
-    private double getDripstoneCaveBiomeScore(CaveDensityContext context, BlockPos pos) {
+    private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
         double region = context.biomeNoise.dripstoneRegion.getValue(pos.getX() * DRIPSTONE_REGION_SCALE, 0.0D, pos.getZ() * DRIPSTONE_REGION_SCALE);
         double detail = context.biomeNoise.dripstoneDetail.getValue(pos.getX() * 0.07D, pos.getY() * 0.1D, pos.getZ() * 0.07D);
         double ridged = 1.0D - Math.abs(context.biomeNoise.dripstoneRidge.getValue(pos.getX() * 0.13D, pos.getY() * 0.16D, pos.getZ() * 0.13D));
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D;
+        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.22D;
     }
 
     private void decorateDripstoneSurface(CaveDensityContext context, Random random, BlockPos pos, int[] budget) {
