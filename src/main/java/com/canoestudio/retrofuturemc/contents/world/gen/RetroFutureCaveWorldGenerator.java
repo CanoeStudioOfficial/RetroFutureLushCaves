@@ -35,7 +35,6 @@ import java.util.Random;
 
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_SIZE = 16;
-    private static final int CHUNK_MARGIN = 5;
     private static final int AZALEA_TREE_CHANCE = 18;
     private static final int HUMID_AZALEA_TREE_CHANCE = 6;
     private static final int WET_AZALEA_TREE_CHANCE = 9;
@@ -44,6 +43,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int LUSH_CAVE_MAX_Y = 62;
     private static final int DRIPSTONE_CAVE_MIN_Y = 8;
     private static final int DRIPSTONE_CAVE_MAX_Y = 58;
+    private static final int LUSH_REGION_CELL_SIZE = 48;
+    private static final int DRIPSTONE_REGION_CELL_SIZE = 48;
+    private static final int MAX_LUSH_REGION_RADIUS = 26;
+    private static final int MAX_DRIPSTONE_REGION_RADIUS = 24;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = 0.18D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
@@ -88,13 +91,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             }
         }
 
-        if (isDripstoneRegionChunk(caveContext) && random.nextInt(7) == 0) {
-            BlockPos dripstoneCenter = findDensityCavePocket(caveContext, random, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y, 96, 4);
-
-            if (dripstoneCenter != null) {
-                generateDripstonePocket(caveContext, random, dripstoneCenter);
-            }
-        }
+        generateNoiseLushRegions(caveContext);
+        generateDripstoneRegions(caveContext);
     }
 
     private CaveDensityContext createCaveDensityContext(World world, int blockX, int blockZ) {
@@ -289,7 +287,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return block == ModBlocks.Azalea_Leaves || block == ModBlocks.Flowering_Azalea_Leaves || block == ModBlocks.Azalea || block == ModBlocks.Flowering_Azalea;
     }
 
-    private BlockPos findDensityCavePocket(CaveDensityContext context, Random random, int minY, int maxY, int attempts, int nearbySolidRadius) {
+    private BlockPos findDensityColumnCenter(CaveDensityContext context, Random random, int x, int z, int minY, int maxY) {
         minY = Math.max(minY, context.bottomY);
         maxY = Math.min(maxY, context.topY);
 
@@ -297,18 +295,82 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return null;
         }
 
-        for (int attempt = 0; attempt < attempts; attempt++) {
-            BlockPos pos = new BlockPos(
-                    context.blockX + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2),
-                    minY + random.nextInt(maxY - minY),
-                    context.blockZ + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2));
+        for (int attempt = 0; attempt < 20; attempt++) {
+            BlockPos pos = new BlockPos(x, minY + random.nextInt(maxY - minY), z);
 
-            if (isDensityCaveAir(context, pos, nearbySolidRadius)) {
+            if (context.isLikelyOpen(pos, DENSITY_COLUMN_OPEN_MARGIN)) {
+                return pos;
+            }
+        }
+
+        for (int y = maxY; y >= minY; y -= 6) {
+            BlockPos pos = new BlockPos(x, y, z);
+
+            if (context.isLikelyOpen(pos, DENSITY_COLUMN_OPEN_MARGIN)) {
                 return pos;
             }
         }
 
         return null;
+    }
+
+    private void generateNoiseLushRegions(CaveDensityContext context) {
+        int minCellX = Math.floorDiv(context.blockX - MAX_LUSH_REGION_RADIUS, LUSH_REGION_CELL_SIZE);
+        int maxCellX = Math.floorDiv(context.blockX + CHUNK_SIZE - 1 + MAX_LUSH_REGION_RADIUS, LUSH_REGION_CELL_SIZE);
+        int minCellZ = Math.floorDiv(context.blockZ - MAX_LUSH_REGION_RADIUS, LUSH_REGION_CELL_SIZE);
+        int maxCellZ = Math.floorDiv(context.blockZ + CHUNK_SIZE - 1 + MAX_LUSH_REGION_RADIUS, LUSH_REGION_CELL_SIZE);
+
+        for (int cellX = minCellX; cellX <= maxCellX; cellX++) {
+            for (int cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+                Random featureRandom = createFeatureRandom(context.world, LUSH_PATCH_SALT, cellX, cellZ);
+
+                if (featureRandom.nextInt(4) != 0) {
+                    continue;
+                }
+
+                int centerX = cellX * LUSH_REGION_CELL_SIZE + featureRandom.nextInt(LUSH_REGION_CELL_SIZE);
+                int centerZ = cellZ * LUSH_REGION_CELL_SIZE + featureRandom.nextInt(LUSH_REGION_CELL_SIZE);
+
+                if (!isLushRegionColumn(context, centerX, centerZ)) {
+                    continue;
+                }
+
+                BlockPos center = findDensityColumnCenter(context, featureRandom, centerX, centerZ, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y);
+
+                if (center != null) {
+                    int radius = 18 + featureRandom.nextInt(9);
+                    int verticalRadius = 10 + featureRandom.nextInt(6);
+                    generateLushPocket(context, featureRandom, center, center, radius, verticalRadius);
+                }
+            }
+        }
+    }
+
+    private void generateDripstoneRegions(CaveDensityContext context) {
+        int minCellX = Math.floorDiv(context.blockX - MAX_DRIPSTONE_REGION_RADIUS, DRIPSTONE_REGION_CELL_SIZE);
+        int maxCellX = Math.floorDiv(context.blockX + CHUNK_SIZE - 1 + MAX_DRIPSTONE_REGION_RADIUS, DRIPSTONE_REGION_CELL_SIZE);
+        int minCellZ = Math.floorDiv(context.blockZ - MAX_DRIPSTONE_REGION_RADIUS, DRIPSTONE_REGION_CELL_SIZE);
+        int maxCellZ = Math.floorDiv(context.blockZ + CHUNK_SIZE - 1 + MAX_DRIPSTONE_REGION_RADIUS, DRIPSTONE_REGION_CELL_SIZE);
+
+        for (int cellX = minCellX; cellX <= maxCellX; cellX++) {
+            for (int cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+                Random featureRandom = createFeatureRandom(context.world, DRIPSTONE_PATCH_SALT, cellX, cellZ);
+                int centerX = cellX * DRIPSTONE_REGION_CELL_SIZE + featureRandom.nextInt(DRIPSTONE_REGION_CELL_SIZE);
+                int centerZ = cellZ * DRIPSTONE_REGION_CELL_SIZE + featureRandom.nextInt(DRIPSTONE_REGION_CELL_SIZE);
+
+                if (!isDripstoneRegionColumn(context, centerX, centerZ)) {
+                    continue;
+                }
+
+                BlockPos center = findDensityColumnCenter(context, featureRandom, centerX, centerZ, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y);
+
+                if (center != null) {
+                    int radius = 14 + featureRandom.nextInt(11);
+                    int verticalRadius = 9 + featureRandom.nextInt(7);
+                    generateDripstonePocket(context, featureRandom, center, radius, verticalRadius);
+                }
+            }
+        }
     }
 
     private BlockPos findCavePocketBelowAzalea(CaveDensityContext context, Random random, BlockPos azaleaTree) {
@@ -427,9 +489,14 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private void generateLushPocket(CaveDensityContext context, Random random, BlockPos azaleaTree, BlockPos center) {
-        World world = context.world;
         int radius = 18 + random.nextInt(7);
         int verticalRadius = 10 + random.nextInt(5);
+
+        generateLushPocket(context, random, azaleaTree, center, radius, verticalRadius);
+    }
+
+    private void generateLushPocket(CaveDensityContext context, Random random, BlockPos azaleaTree, BlockPos center, int radius, int verticalRadius) {
+        World world = context.world;
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
@@ -531,7 +598,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             world.setBlockState(sideFloor, Blocks.CLAY.getDefaultState(), 2);
             BlockPos waterPos = sideFloor.up();
 
-            if (world.isAirBlock(waterPos) && random.nextInt(100) < 55) {
+            if (world.isAirBlock(waterPos) && !isNearLava(world, waterPos, 2, blockX, blockZ) && random.nextInt(100) < 55) {
                 world.setBlockState(waterPos, Blocks.WATER.getDefaultState(), 2);
                 waterTargets.add(waterPos);
                 placedWater = true;
@@ -687,10 +754,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
     }
 
-    private void generateDripstonePocket(CaveDensityContext context, Random random, BlockPos center) {
+    private void generateDripstonePocket(CaveDensityContext context, Random random, BlockPos center, int radius, int verticalRadius) {
         World world = context.world;
-        int radius = 12 + random.nextInt(8);
-        int verticalRadius = 8 + random.nextInt(5);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
@@ -726,12 +791,24 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                         world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
                     }
 
-                    if (ceilingFace && random.nextInt(100) < 46) {
-                        placePointedDripstone(world, random, below, EnumFacing.DOWN);
+                    if (ceilingFace) {
+                        int ceilingRoll = random.nextInt(100);
+
+                        if (ceilingRoll < 14) {
+                            placePointedDripstone(world, below, EnumFacing.DOWN, 4 + random.nextInt(6));
+                        } else if (ceilingRoll < 52) {
+                            placePointedDripstone(world, random, below, EnumFacing.DOWN);
+                        }
                     }
 
-                    if (floorFace && random.nextInt(100) < 34) {
-                        placePointedDripstone(world, random, above, EnumFacing.UP);
+                    if (floorFace) {
+                        int floorRoll = random.nextInt(100);
+
+                        if (floorRoll < 10) {
+                            placePointedDripstone(world, above, EnumFacing.UP, 3 + random.nextInt(5));
+                        } else if (floorRoll < 40) {
+                            placePointedDripstone(world, random, above, EnumFacing.UP);
+                        }
                     }
                 }
             }
@@ -740,6 +817,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
     private void placePointedDripstone(World world, Random random, BlockPos start, EnumFacing direction) {
         int length = 1 + random.nextInt(random.nextBoolean() ? 3 : 5);
+        placePointedDripstone(world, start, direction, length);
+    }
+
+    private void placePointedDripstone(World world, BlockPos start, EnumFacing direction, int length) {
         ((PointedDripstoneBlock)ModBlocks.POINTED_DRIPSTONE).placeColumn(world, start, direction, length, 2);
     }
 
@@ -750,6 +831,26 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                     BlockPos check = pos.add(dx, dy, dz);
 
                     if (isInsideChunk(check, blockX, blockZ) && world.getBlockState(check).getMaterial() == Material.WATER) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isNearLava(World world, BlockPos pos, int radius, int blockX, int blockZ) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                for (int dy = -radius; dy <= radius; dy++) {
+                    BlockPos check = pos.add(dx, dy, dz);
+
+                    if (!isInsideChunk(check, blockX, blockZ)) {
+                        continue;
+                    }
+
+                    if (world.getBlockState(check).getMaterial() == Material.LAVA) {
                         return true;
                     }
                 }
@@ -779,18 +880,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double region = smoothNoise(context.world.getSeed() ^ LUSH_REGION_SALT, x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
         double detail = smoothNoise(context.world.getSeed() ^ (LUSH_REGION_SALT << 1), x * 0.036D, 0.0D, z * 0.036D);
         return region * 0.8D + detail * 0.2D > LUSH_REGION_THRESHOLD && hasBetterCavesDensityOpening(context, x, z, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y);
-    }
-
-    private boolean isDripstoneRegionChunk(CaveDensityContext context) {
-        for (int dx = 4; dx < CHUNK_SIZE; dx += 4) {
-            for (int dz = 4; dz < CHUNK_SIZE; dz += 4) {
-                if (isDripstoneRegionColumn(context, context.blockX + dx, context.blockZ + dz)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private boolean isDripstoneRegionColumn(CaveDensityContext context, int x, int z) {
@@ -843,6 +932,18 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double edgeFalloff = 1.0D - normalizedDistance;
         double caveAffinity = context.caveAffinity(pos);
         return main * 0.5D + ridged * 0.32D + edgeFalloff * 0.42D + caveAffinity * 0.22D > -0.05D;
+    }
+
+    private Random createFeatureRandom(World world, long salt, int cellX, int cellZ) {
+        long seed = world.getSeed() ^ salt;
+        seed ^= cellX * 341873128712L;
+        seed ^= cellZ * 132897987541L;
+        seed ^= seed >> 33;
+        seed *= 0xff51afd7ed558ccdL;
+        seed ^= seed >> 33;
+        seed *= 0xc4ceb9fe1a85ec53L;
+        seed ^= seed >> 33;
+        return new Random(seed);
     }
 
     private double smoothNoise(long seed, double x, double y, double z) {
