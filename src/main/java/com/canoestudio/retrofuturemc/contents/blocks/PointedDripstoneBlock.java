@@ -16,6 +16,7 @@ import net.minecraft.block.state.BlockFaceShape;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.item.EntityFallingBlock;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
@@ -30,10 +31,12 @@ import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
+import net.minecraftforge.fml.relauncher.ReflectionHelper;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
 import javax.annotation.Nonnull;
+import java.lang.reflect.Field;
 import java.util.Random;
 
 import static com.canoestudio.retrofuturemc.contents.tab.CreativeTab.CREATIVE_TABS;
@@ -53,6 +56,12 @@ public class PointedDripstoneBlock extends Block implements IFluidloggable {
     private static final AxisAlignedBB FRUSTUM_DOWN_AABB = new AxisAlignedBB(0.3125D, 0.0D, 0.3125D, 0.6875D, 1.0D, 0.6875D);
     private static final AxisAlignedBB MIDDLE_AABB = new AxisAlignedBB(0.25D, 0.0D, 0.25D, 0.75D, 1.0D, 0.75D);
     private static final AxisAlignedBB BASE_AABB = new AxisAlignedBB(0.1875D, 0.0D, 0.1875D, 0.8125D, 1.0D, 0.8125D);
+    private static final int STALACTITE_FALL_DELAY = 2;
+    private static final int STALAGMITE_BREAK_DELAY = 1;
+    private static final int MAX_FALLING_STALACTITE_BLOCKS = 32;
+    private static final int STALACTITE_MAX_DAMAGE = 40;
+    private static final Field FALL_HURT_AMOUNT_FIELD = findFallingBlockField("fallHurtAmount", "field_145816_i");
+    private static final Field FALL_HURT_MAX_FIELD = findFallingBlockField("fallHurtMax", "field_145815_h");
 
     public PointedDripstoneBlock() {
         super(Material.ROCK);
@@ -88,14 +97,41 @@ public class PointedDripstoneBlock extends Block implements IFluidloggable {
 
     @Override
     public void onBlockAdded(World worldIn, BlockPos pos, IBlockState state) {
+        if (!worldIn.isRemote && !canBlockStay(worldIn, pos, state)) {
+            breakUnsupportedBlock(worldIn, pos, state);
+            return;
+        }
+
         updateColumn(worldIn, pos);
     }
 
     @Override
     public void neighborChanged(IBlockState state, World worldIn, BlockPos pos, Block blockIn, BlockPos fromPos) {
         if (!canBlockStay(worldIn, pos, state)) {
-            dropBlockAsItem(worldIn, pos, state, 0);
-            worldIn.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+            if (!worldIn.isRemote) {
+                int delay = state.getValue(VERTICAL_DIRECTION) == EnumFacing.DOWN ? STALACTITE_FALL_DELAY : STALAGMITE_BREAK_DELAY;
+                worldIn.scheduleUpdate(pos, this, delay);
+            }
+
+            return;
+        }
+
+        updateColumn(worldIn, pos);
+    }
+
+    @Override
+    public void updateTick(World worldIn, BlockPos pos, IBlockState state, Random rand) {
+        if (state.getBlock() != this) {
+            return;
+        }
+
+        if (!canBlockStay(worldIn, pos, state)) {
+            if (state.getValue(VERTICAL_DIRECTION) == EnumFacing.DOWN) {
+                spawnFallingStalactiteColumn(worldIn, pos);
+            } else {
+                breakUnsupportedBlock(worldIn, pos, state);
+            }
+
             return;
         }
 
@@ -195,6 +231,94 @@ public class PointedDripstoneBlock extends Block implements IFluidloggable {
         return state.getBlock() == this && state.getValue(VERTICAL_DIRECTION) == direction;
     }
 
+    private void spawnFallingStalactiteColumn(World world, BlockPos pos) {
+        if (world.isRemote) {
+            return;
+        }
+
+        BlockPos fallPos = pos;
+
+        for (int i = 0; i < MAX_FALLING_STALACTITE_BLOCKS; i++) {
+            IBlockState fallState = world.getBlockState(fallPos);
+
+            if (!isStalactite(fallState)) {
+                break;
+            }
+
+            EntityFallingBlock entity = spawnFallingDripstoneBlock(world, fallPos, fallState);
+
+            if (isTip(fallState, true)) {
+                int size = Math.max(1 + pos.getY() - fallPos.getY(), 6);
+                configureStalactiteDamage(entity, size, STALACTITE_MAX_DAMAGE);
+                break;
+            }
+
+            fallPos = fallPos.down();
+        }
+    }
+
+    private EntityFallingBlock spawnFallingDripstoneBlock(World world, BlockPos pos, IBlockState state) {
+        EntityFallingBlock entity = new EntityFallingBlock(world, pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, state);
+        entity.fallTime = 1;
+        setBlockStateKeepingFluid(world, pos, 3);
+        world.spawnEntity(entity);
+        return entity;
+    }
+
+    private void configureStalactiteDamage(EntityFallingBlock entity, float damagePerFallDistance, int maxDamage) {
+        entity.setHurtEntities(true);
+        setFallingBlockFloat(entity, FALL_HURT_AMOUNT_FIELD, damagePerFallDistance);
+        setFallingBlockInt(entity, FALL_HURT_MAX_FIELD, maxDamage);
+    }
+
+    private static Field findFallingBlockField(String deobfuscatedName, String srgName) {
+        try {
+            return ReflectionHelper.findField(EntityFallingBlock.class, deobfuscatedName, srgName);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static void setFallingBlockFloat(EntityFallingBlock entity, Field field, float value) {
+        if (field == null) {
+            return;
+        }
+
+        try {
+            field.setFloat(entity, value);
+        } catch (IllegalAccessException | IllegalArgumentException ignored) {
+        }
+    }
+
+    private static void setFallingBlockInt(EntityFallingBlock entity, Field field, int value) {
+        if (field == null) {
+            return;
+        }
+
+        try {
+            field.setInt(entity, value);
+        } catch (IllegalAccessException | IllegalArgumentException ignored) {
+        }
+    }
+
+    private boolean isStalactite(IBlockState state) {
+        return state.getBlock() == this && state.getValue(VERTICAL_DIRECTION) == EnumFacing.DOWN;
+    }
+
+    private boolean isTip(IBlockState state, boolean includeMergedTip) {
+        if (state.getBlock() != this) {
+            return false;
+        }
+
+        Thickness thickness = state.getValue(THICKNESS);
+        return thickness == Thickness.TIP || includeMergedTip && thickness == Thickness.TIP_MERGE;
+    }
+
+    private void breakUnsupportedBlock(World world, BlockPos pos, IBlockState state) {
+        dropBlockAsItem(world, pos, state, 0);
+        setBlockStateKeepingFluid(world, pos, 3);
+    }
+
     @Override
     public void onFallenUpon(World worldIn, BlockPos pos, Entity entityIn, float fallDistance) {
         IBlockState state = worldIn.getBlockState(pos);
@@ -289,6 +413,14 @@ public class PointedDripstoneBlock extends Block implements IFluidloggable {
             FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
         } else {
             world.setBlockState(pos, newState, flags);
+        }
+    }
+
+    private void setBlockStateKeepingFluid(World world, BlockPos pos, int flags) {
+        if (hasWaterFluid(world, pos)) {
+            world.setBlockState(pos, Blocks.WATER.getDefaultState(), flags);
+        } else {
+            world.setBlockState(pos, Blocks.AIR.getDefaultState(), flags);
         }
     }
 
