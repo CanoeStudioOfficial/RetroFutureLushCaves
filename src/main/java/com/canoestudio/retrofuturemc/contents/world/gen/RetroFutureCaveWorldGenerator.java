@@ -42,8 +42,14 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int AZALEA_TREE_MIN_SPACING = 24;
     private static final int LUSH_CAVE_MIN_Y = 8;
     private static final int LUSH_CAVE_MAX_Y = 62;
+    private static final int DRIPSTONE_CAVE_MIN_Y = 8;
+    private static final int DRIPSTONE_CAVE_MAX_Y = 58;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = 0.18D;
+    private static final double DRIPSTONE_REGION_SCALE = 0.011D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = 0.08D;
+    private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.12D;
+    private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.18D;
     private static final long LUSH_REGION_SALT = 0x4C5553485245474EL;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
@@ -64,28 +70,41 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        int blockX = chunkX * 16;
-        int blockZ = chunkZ * 16;
-        BetterCavesConfig betterCavesConfig = getBetterCavesConfig(world);
-        Mojang118CaveDensitySampler densitySampler = betterCavesConfig.isMojang118StyleCavesEnabled() ? getDensitySampler(world, betterCavesConfig) : null;
+        int blockX = chunkX * CHUNK_SIZE;
+        int blockZ = chunkZ * CHUNK_SIZE;
+        CaveDensityContext caveContext = createCaveDensityContext(world, blockX, blockZ);
 
-        if (densitySampler != null && isLushRegionChunk(world, densitySampler, betterCavesConfig, blockX, blockZ) && random.nextInt(getAzaleaTreeChanceForChunk(world, blockX, blockZ)) == 0) {
-            BlockPos azaleaTree = findSurfaceAzaleaTreePos(world, random, densitySampler, betterCavesConfig, blockX, blockZ);
-            BlockPos lushCenter = azaleaTree == null || hasNearbyAzaleaTree(world, azaleaTree, AZALEA_TREE_MIN_SPACING) ? null : findCavePocketBelowAzalea(world, random, densitySampler, betterCavesConfig, azaleaTree, blockX, blockZ);
+        if (caveContext == null) {
+            return;
+        }
+
+        if (isLushRegionChunk(caveContext) && random.nextInt(getAzaleaTreeChanceForChunk(world, blockX, blockZ)) == 0) {
+            BlockPos azaleaTree = findSurfaceAzaleaTreePos(caveContext, random);
+            BlockPos lushCenter = azaleaTree == null || hasNearbyAzaleaTree(world, azaleaTree, AZALEA_TREE_MIN_SPACING) ? null : findCavePocketBelowAzalea(caveContext, random, azaleaTree);
 
             if (lushCenter != null && generateSurfaceAzaleaTree(world, random, azaleaTree)) {
                 placeRootTrail(world, random, azaleaTree, lushCenter);
-                generateLushPocket(world, random, densitySampler, betterCavesConfig, azaleaTree, lushCenter, blockX, blockZ);
+                generateLushPocket(caveContext, random, azaleaTree, lushCenter);
             }
         }
 
-        if (random.nextInt(7) == 0) {
-            BlockPos dripstoneCenter = findCavePocket(world, random, blockX, blockZ, 8, 58);
+        if (isDripstoneRegionChunk(caveContext) && random.nextInt(7) == 0) {
+            BlockPos dripstoneCenter = findDensityCavePocket(caveContext, random, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y, 96, 4);
 
             if (dripstoneCenter != null) {
-                generateDripstonePocket(world, random, dripstoneCenter, blockX, blockZ);
+                generateDripstonePocket(caveContext, random, dripstoneCenter);
             }
         }
+    }
+
+    private CaveDensityContext createCaveDensityContext(World world, int blockX, int blockZ) {
+        BetterCavesConfig betterCavesConfig = getBetterCavesConfig(world);
+
+        if (!betterCavesConfig.isMojang118StyleCavesEnabled()) {
+            return null;
+        }
+
+        return new CaveDensityContext(world, blockX, blockZ, betterCavesConfig, getDensitySampler(world, betterCavesConfig));
     }
 
     private BetterCavesConfig getBetterCavesConfig(World world) {
@@ -111,6 +130,88 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         return cachedDensitySampler;
+    }
+
+    private final class CaveDensityContext {
+        private final World world;
+        private final int blockX;
+        private final int blockZ;
+        private final Mojang118CaveDensitySampler densitySampler;
+        private final int bottomY;
+        private final int topY;
+        private final int surfaceCutoff;
+        private final double densityThreshold;
+        private final int[] surfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
+
+        private CaveDensityContext(World world, int blockX, int blockZ, BetterCavesConfig config, Mojang118CaveDensitySampler densitySampler) {
+            this.world = world;
+            this.blockX = blockX;
+            this.blockZ = blockZ;
+            this.densitySampler = densitySampler;
+            this.bottomY = Math.max(0, config.getMojang118StyleCaveBottom());
+            this.topY = Math.min(world.getActualHeight() - 1, config.getMojang118StyleCaveTop());
+            this.surfaceCutoff = Math.max(0, config.getMojang118StyleCaveSurfaceCutoffDepth());
+            this.densityThreshold = config.getMojang118StyleCaveDensityThreshold();
+        }
+
+        private boolean containsY(int y) {
+            return y >= bottomY && y <= topY;
+        }
+
+        private boolean isLikelyOpen(BlockPos pos, double margin) {
+            return containsY(pos.getY()) && sampleCarverDensity(pos) <= densityThreshold + margin;
+        }
+
+        private double caveAffinity(BlockPos pos) {
+            double density = sampleCarverDensity(pos);
+            return clamp((densityThreshold + 0.2D - density) / 0.4D, 0.0D, 1.0D);
+        }
+
+        private double sampleCarverDensity(BlockPos pos) {
+            double density = densitySampler.sampleDensity(pos.getX(), pos.getY(), pos.getZ());
+
+            if (surfaceCutoff <= 0) {
+                return density;
+            }
+
+            int surfaceY = Math.min(topY, getSurfaceY(pos.getX(), pos.getZ()));
+            int transitionBoundary = Math.max(bottomY, surfaceY - surfaceCutoff);
+
+            if (pos.getY() >= transitionBoundary) {
+                int transitionHeight = Math.max(1, surfaceY - transitionBoundary);
+                double surfaceFactor = clamp((pos.getY() - transitionBoundary) / (double)transitionHeight, 0.0D, 1.0D);
+                density += surfaceFactor * 0.45D;
+            }
+
+            return density;
+        }
+
+        private int getSurfaceY(int x, int z) {
+            if (isInsideChunk(x, z)) {
+                int localX = x - blockX;
+                int localZ = z - blockZ;
+                int index = localX * CHUNK_SIZE + localZ;
+                int cached = surfaceYCache[index];
+
+                if (cached != 0) {
+                    return cached;
+                }
+
+                cached = world.getHeight(new BlockPos(x, 0, z)).getY();
+                surfaceYCache[index] = cached;
+                return cached;
+            }
+
+            return world.getHeight(new BlockPos(x, 0, z)).getY();
+        }
+
+        private boolean isInsideChunk(BlockPos pos) {
+            return RetroFutureCaveWorldGenerator.this.isInsideChunk(pos, blockX, blockZ);
+        }
+
+        private boolean isInsideChunk(int x, int z) {
+            return x >= blockX && x < blockX + CHUNK_SIZE && z >= blockZ && z < blockZ + CHUNK_SIZE;
+        }
     }
 
     private int getAzaleaTreeChanceForChunk(World world, int blockX, int blockZ) {
@@ -144,11 +245,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                 || BiomeDictionary.hasType(biome, BiomeDictionary.Type.LUSH);
     }
 
-    private BlockPos findSurfaceAzaleaTreePos(World world, Random random, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, int blockX, int blockZ) {
+    private BlockPos findSurfaceAzaleaTreePos(CaveDensityContext context, Random random) {
         for (int attempt = 0; attempt < 10; attempt++) {
-            BlockPos start = world.getHeight(new BlockPos(blockX + random.nextInt(CHUNK_SIZE), 0, blockZ + random.nextInt(CHUNK_SIZE)));
+            BlockPos start = context.world.getHeight(new BlockPos(context.blockX + random.nextInt(CHUNK_SIZE), 0, context.blockZ + random.nextInt(CHUNK_SIZE)));
 
-            if (start.getY() >= 50 && start.getY() <= world.getActualHeight() - 16 && isLushRegionColumn(world, densitySampler, config, start.getX(), start.getZ())) {
+            if (start.getY() >= 50 && start.getY() <= context.world.getActualHeight() - 16 && isLushRegionColumn(context, start.getX(), start.getZ())) {
                 return start;
             }
         }
@@ -188,14 +289,21 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return block == ModBlocks.Azalea_Leaves || block == ModBlocks.Flowering_Azalea_Leaves || block == ModBlocks.Azalea || block == ModBlocks.Flowering_Azalea;
     }
 
-    private BlockPos findCavePocket(World world, Random random, int blockX, int blockZ, int minY, int maxY) {
-        for (int attempt = 0; attempt < 24; attempt++) {
-            BlockPos pos = new BlockPos(
-                    blockX + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2),
-                    minY + random.nextInt(maxY - minY),
-                    blockZ + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2));
+    private BlockPos findDensityCavePocket(CaveDensityContext context, Random random, int minY, int maxY, int attempts, int nearbySolidRadius) {
+        minY = Math.max(minY, context.bottomY);
+        maxY = Math.min(maxY, context.topY);
 
-            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 4)) {
+        if (maxY <= minY) {
+            return null;
+        }
+
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            BlockPos pos = new BlockPos(
+                    context.blockX + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2),
+                    minY + random.nextInt(maxY - minY),
+                    context.blockZ + CHUNK_MARGIN + random.nextInt(CHUNK_SIZE - CHUNK_MARGIN * 2));
+
+            if (isDensityCaveAir(context, pos, nearbySolidRadius)) {
                 return pos;
             }
         }
@@ -203,10 +311,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return null;
     }
 
-    private BlockPos findCavePocketBelowAzalea(World world, Random random, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, BlockPos azaleaTree, int blockX, int blockZ) {
+    private BlockPos findCavePocketBelowAzalea(CaveDensityContext context, Random random, BlockPos azaleaTree) {
         int minY = LUSH_CAVE_MIN_Y;
-        int maxY = Math.min(Math.min(LUSH_CAVE_MAX_Y, config.getMojang118StyleCaveTop()), azaleaTree.getY() - 8);
-        minY = Math.max(minY, config.getMojang118StyleCaveBottom());
+        int maxY = Math.min(Math.min(LUSH_CAVE_MAX_Y, context.topY), azaleaTree.getY() - 8);
+        minY = Math.max(minY, context.bottomY);
 
         if (maxY <= minY) {
             return null;
@@ -218,11 +326,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                     minY + random.nextInt(maxY - minY),
                     azaleaTree.getZ() + random.nextInt(21) - 10);
 
-            if (!isInsideChunk(pos, blockX, blockZ)) {
+            if (!context.isInsideChunk(pos)) {
                 continue;
             }
 
-            if (world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ) && isLushCaveRegion(world, densitySampler, config, pos, azaleaTree)) {
+            if (isDensityCaveAir(context, pos, 3) && isLushCaveRegion(context, pos, azaleaTree)) {
                 return pos;
             }
         }
@@ -236,7 +344,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = new BlockPos(azaleaTree.getX() + dx, y, azaleaTree.getZ() + dz);
 
-                    if (isInsideChunk(pos, blockX, blockZ) && world.isAirBlock(pos) && !world.canSeeSky(pos) && hasNearbySolid(world, pos, 3, blockX, blockZ) && isLushCaveRegion(world, densitySampler, config, pos, azaleaTree)) {
+                    if (context.isInsideChunk(pos) && isDensityCaveAir(context, pos, 3) && isLushCaveRegion(context, pos, azaleaTree)) {
                         return pos;
                     }
                 }
@@ -310,7 +418,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private void generateLushPocket(World world, Random random, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, BlockPos azaleaTree, BlockPos center, int blockX, int blockZ) {
+    private boolean isDensityCaveAir(CaveDensityContext context, BlockPos pos, int nearbySolidRadius) {
+        return context.isInsideChunk(pos)
+                && context.world.isAirBlock(pos)
+                && !context.world.canSeeSky(pos)
+                && context.isLikelyOpen(pos, DENSITY_COLUMN_OPEN_MARGIN)
+                && hasNearbySolid(context.world, pos, nearbySolidRadius, context.blockX, context.blockZ);
+    }
+
+    private void generateLushPocket(CaveDensityContext context, Random random, BlockPos azaleaTree, BlockPos center) {
+        World world = context.world;
         int radius = 18 + random.nextInt(7);
         int verticalRadius = 10 + random.nextInt(5);
 
@@ -325,7 +442,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = center.add(dx, dy, dz);
 
-                    if (!isInsideChunk(pos, blockX, blockZ) || !isLushPatchNoise(world, densitySampler, config, pos, azaleaTree, distance)) {
+                    if (!context.isInsideChunk(pos) || !isLushPatchNoise(context, pos, azaleaTree, distance)) {
                         continue;
                     }
 
@@ -335,18 +452,23 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                         continue;
                     }
 
-                    if (isAirOrWater(world, pos.up())) {
-                        decorateLushFloor(world, random, pos, blockX, blockZ);
+                    BlockPos above = pos.up();
+                    BlockPos below = pos.down();
+                    boolean openAbove = isAirOrWater(world, above) && context.isLikelyOpen(above, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean openBelow = world.isAirBlock(below) && context.isLikelyOpen(below, DENSITY_DECORATION_OPEN_MARGIN);
+
+                    if (openAbove) {
+                        decorateLushFloor(world, random, pos, context.blockX, context.blockZ);
                     }
 
-                    if (world.isAirBlock(pos.down())) {
+                    if (openBelow) {
                         decorateLushCeiling(world, random, pos);
                     }
                 }
             }
         }
 
-        spawnAxolotlNearWater(world, random, center, radius + 1, blockX, blockZ);
+        spawnAxolotlNearWater(world, random, center, radius + 1, context.blockX, context.blockZ);
     }
 
     private void decorateLushFloor(World world, Random random, BlockPos pos, int blockX, int blockZ) {
@@ -565,9 +687,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
     }
 
-    private void generateDripstonePocket(World world, Random random, BlockPos center, int blockX, int blockZ) {
-        int radius = 10 + random.nextInt(7);
-        int verticalRadius = 7 + random.nextInt(4);
+    private void generateDripstonePocket(CaveDensityContext context, Random random, BlockPos center) {
+        World world = context.world;
+        int radius = 12 + random.nextInt(8);
+        int verticalRadius = 8 + random.nextInt(5);
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
@@ -580,7 +703,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos pos = center.add(dx, dy, dz);
 
-                    if (!isInsideChunk(pos, blockX, blockZ) || !isDripstonePatchNoise(world, pos, distance)) {
+                    if (!context.isInsideChunk(pos) || !isDripstonePatchNoise(context, pos, distance)) {
                         continue;
                     }
 
@@ -590,16 +713,25 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                         continue;
                     }
 
-                    if ((world.isAirBlock(pos.down()) || world.isAirBlock(pos.up())) && random.nextInt(100) < 46) {
+                    BlockPos above = pos.up();
+                    BlockPos below = pos.down();
+                    boolean floorFace = world.isAirBlock(above) && context.isLikelyOpen(above, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean ceilingFace = world.isAirBlock(below) && context.isLikelyOpen(below, DENSITY_DECORATION_OPEN_MARGIN);
+
+                    if (!floorFace && !ceilingFace) {
+                        continue;
+                    }
+
+                    if (random.nextInt(100) < 52) {
                         world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
                     }
 
-                    if (world.isAirBlock(pos.down()) && random.nextInt(100) < 42) {
-                        placePointedDripstone(world, random, pos.down(), EnumFacing.DOWN);
+                    if (ceilingFace && random.nextInt(100) < 46) {
+                        placePointedDripstone(world, random, below, EnumFacing.DOWN);
                     }
 
-                    if (world.isAirBlock(pos.up()) && random.nextInt(100) < 30) {
-                        placePointedDripstone(world, random, pos.up(), EnumFacing.UP);
+                    if (floorFace && random.nextInt(100) < 34) {
+                        placePointedDripstone(world, random, above, EnumFacing.UP);
                     }
                 }
             }
@@ -631,10 +763,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return pos.getX() >= blockX && pos.getX() < blockX + CHUNK_SIZE && pos.getZ() >= blockZ && pos.getZ() < blockZ + CHUNK_SIZE;
     }
 
-    private boolean isLushRegionChunk(World world, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, int blockX, int blockZ) {
+    private boolean isLushRegionChunk(CaveDensityContext context) {
         for (int dx = 4; dx < CHUNK_SIZE; dx += 4) {
             for (int dz = 4; dz < CHUNK_SIZE; dz += 4) {
-                if (isLushRegionColumn(world, densitySampler, config, blockX + dx, blockZ + dz)) {
+                if (isLushRegionColumn(context, context.blockX + dx, context.blockZ + dz)) {
                     return true;
                 }
             }
@@ -643,19 +775,36 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private boolean isLushRegionColumn(World world, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, int x, int z) {
-        double region = smoothNoise(world.getSeed() ^ LUSH_REGION_SALT, x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
-        double detail = smoothNoise(world.getSeed() ^ (LUSH_REGION_SALT << 1), x * 0.036D, 0.0D, z * 0.036D);
-        return region * 0.8D + detail * 0.2D > LUSH_REGION_THRESHOLD && hasBetterCavesDensityOpening(densitySampler, config, x, z);
+    private boolean isLushRegionColumn(CaveDensityContext context, int x, int z) {
+        double region = smoothNoise(context.world.getSeed() ^ LUSH_REGION_SALT, x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
+        double detail = smoothNoise(context.world.getSeed() ^ (LUSH_REGION_SALT << 1), x * 0.036D, 0.0D, z * 0.036D);
+        return region * 0.8D + detail * 0.2D > LUSH_REGION_THRESHOLD && hasBetterCavesDensityOpening(context, x, z, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y);
     }
 
-    private boolean hasBetterCavesDensityOpening(Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, int x, int z) {
-        int minY = Math.max(LUSH_CAVE_MIN_Y, config.getMojang118StyleCaveBottom());
-        int maxY = Math.min(LUSH_CAVE_MAX_Y, config.getMojang118StyleCaveTop());
-        double threshold = config.getMojang118StyleCaveDensityThreshold() + 0.12D;
+    private boolean isDripstoneRegionChunk(CaveDensityContext context) {
+        for (int dx = 4; dx < CHUNK_SIZE; dx += 4) {
+            for (int dz = 4; dz < CHUNK_SIZE; dz += 4) {
+                if (isDripstoneRegionColumn(context, context.blockX + dx, context.blockZ + dz)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isDripstoneRegionColumn(CaveDensityContext context, int x, int z) {
+        double region = smoothNoise(context.world.getSeed() ^ DRIPSTONE_PATCH_SALT, x * DRIPSTONE_REGION_SCALE, 0.0D, z * DRIPSTONE_REGION_SCALE);
+        double detail = smoothNoise(context.world.getSeed() ^ (DRIPSTONE_PATCH_SALT << 2), x * 0.033D, 0.0D, z * 0.033D);
+        return region * 0.72D + detail * 0.28D > DRIPSTONE_REGION_THRESHOLD && hasBetterCavesDensityOpening(context, x, z, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y);
+    }
+
+    private boolean hasBetterCavesDensityOpening(CaveDensityContext context, int x, int z, int minY, int maxY) {
+        minY = Math.max(minY, context.bottomY);
+        maxY = Math.min(maxY, context.topY);
 
         for (int y = minY; y <= maxY; y += 8) {
-            if (densitySampler.sampleDensity(x, y, z) <= threshold) {
+            if (context.isLikelyOpen(new BlockPos(x, y, z), DENSITY_COLUMN_OPEN_MARGIN)) {
                 return true;
             }
         }
@@ -663,28 +812,22 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return false;
     }
 
-    private boolean isLushCaveRegion(World world, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, BlockPos pos, BlockPos azaleaTree) {
+    private boolean isLushCaveRegion(CaveDensityContext context, BlockPos pos, BlockPos azaleaTree) {
         double vertical = 1.0D - Math.min(1.0D, Math.abs(pos.getY() - 34.0D) / 42.0D);
         double horizontalFalloff = horizontalFalloff(pos, azaleaTree, 44.0D);
-        double region = smoothNoise(world.getSeed() ^ LUSH_REGION_SALT, pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
-        double detail = smoothNoise(world.getSeed() ^ (LUSH_PATCH_SALT << 2), pos.getX() * 0.046D, pos.getY() * 0.05D, pos.getZ() * 0.046D);
-        double caveAffinity = betterCavesCaveAffinity(densitySampler, config, pos);
+        double region = smoothNoise(context.world.getSeed() ^ LUSH_REGION_SALT, pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
+        double detail = smoothNoise(context.world.getSeed() ^ (LUSH_PATCH_SALT << 2), pos.getX() * 0.046D, pos.getY() * 0.05D, pos.getZ() * 0.046D);
+        double caveAffinity = context.caveAffinity(pos);
         return region * 0.58D + detail * 0.18D + vertical * 0.14D + horizontalFalloff * 0.38D + caveAffinity * 0.32D > 0.12D;
     }
 
-    private double betterCavesCaveAffinity(Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, BlockPos pos) {
-        double density = densitySampler.sampleDensity(pos.getX(), pos.getY(), pos.getZ());
-        double threshold = config.getMojang118StyleCaveDensityThreshold();
-        return clamp((threshold + 0.2D - density) / 0.4D, 0.0D, 1.0D);
-    }
-
-    private boolean isLushPatchNoise(World world, Mojang118CaveDensitySampler densitySampler, BetterCavesConfig config, BlockPos pos, BlockPos azaleaTree, double normalizedDistance) {
-        double main = smoothNoise(world.getSeed() ^ LUSH_PATCH_SALT, pos.getX() * 0.055D, pos.getY() * 0.08D, pos.getZ() * 0.055D);
-        double detail = smoothNoise(world.getSeed() ^ (LUSH_PATCH_SALT << 1), pos.getX() * 0.13D, pos.getY() * 0.18D, pos.getZ() * 0.13D);
+    private boolean isLushPatchNoise(CaveDensityContext context, BlockPos pos, BlockPos azaleaTree, double normalizedDistance) {
+        double main = smoothNoise(context.world.getSeed() ^ LUSH_PATCH_SALT, pos.getX() * 0.055D, pos.getY() * 0.08D, pos.getZ() * 0.055D);
+        double detail = smoothNoise(context.world.getSeed() ^ (LUSH_PATCH_SALT << 1), pos.getX() * 0.13D, pos.getY() * 0.18D, pos.getZ() * 0.13D);
         double edgeFalloff = 1.0D - normalizedDistance;
         double horizontalFalloff = horizontalFalloff(pos, azaleaTree, 48.0D);
-        double caveAffinity = betterCavesCaveAffinity(densitySampler, config, pos);
-        return isLushCaveRegion(world, densitySampler, config, pos, azaleaTree) && main * 0.48D + detail * 0.2D + edgeFalloff * 0.38D + horizontalFalloff * 0.28D + caveAffinity * 0.28D > -0.08D;
+        double caveAffinity = context.caveAffinity(pos);
+        return isLushCaveRegion(context, pos, azaleaTree) && main * 0.48D + detail * 0.2D + edgeFalloff * 0.38D + horizontalFalloff * 0.28D + caveAffinity * 0.28D > -0.08D;
     }
 
     private double horizontalFalloff(BlockPos pos, BlockPos center, double radius) {
@@ -694,11 +837,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return 1.0D - Math.min(1.0D, distanceSq / (radius * radius));
     }
 
-    private boolean isDripstonePatchNoise(World world, BlockPos pos, double normalizedDistance) {
-        double main = smoothNoise(world.getSeed() ^ DRIPSTONE_PATCH_SALT, pos.getX() * 0.06D, pos.getY() * 0.09D, pos.getZ() * 0.06D);
-        double ridged = 1.0D - Math.abs(smoothNoise(world.getSeed() ^ (DRIPSTONE_PATCH_SALT << 1), pos.getX() * 0.11D, pos.getY() * 0.15D, pos.getZ() * 0.11D));
+    private boolean isDripstonePatchNoise(CaveDensityContext context, BlockPos pos, double normalizedDistance) {
+        double main = smoothNoise(context.world.getSeed() ^ DRIPSTONE_PATCH_SALT, pos.getX() * 0.06D, pos.getY() * 0.09D, pos.getZ() * 0.06D);
+        double ridged = 1.0D - Math.abs(smoothNoise(context.world.getSeed() ^ (DRIPSTONE_PATCH_SALT << 1), pos.getX() * 0.11D, pos.getY() * 0.15D, pos.getZ() * 0.11D));
         double edgeFalloff = 1.0D - normalizedDistance;
-        return main * 0.55D + ridged * 0.35D + edgeFalloff * 0.45D > -0.05D;
+        double caveAffinity = context.caveAffinity(pos);
+        return main * 0.5D + ridged * 0.32D + edgeFalloff * 0.42D + caveAffinity * 0.22D > -0.05D;
     }
 
     private double smoothNoise(long seed, double x, double y, double z) {
