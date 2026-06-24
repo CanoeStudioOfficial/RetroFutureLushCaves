@@ -71,6 +71,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
     private static final int NO_SURFACE = -1;
+    private static final int MIN_LUSH_CAVE_DISTANCE = 1000;
+    private static final int MIN_LUSH_CAVE_DISTANCE_SQ = MIN_LUSH_CAVE_DISTANCE * MIN_LUSH_CAVE_DISTANCE;
     private static final EnumFacing[] DRIPLEAF_FEATURE_FACINGS = new EnumFacing[] {EnumFacing.EAST, EnumFacing.WEST, EnumFacing.SOUTH, EnumFacing.NORTH};
     private BetterCavesConfig cachedBetterCavesConfig;
     private int cachedBetterCavesConfigDimension = Integer.MIN_VALUE;
@@ -1327,6 +1329,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private boolean isLushRegionChunk(CaveDensityContext context) {
+        int chunkCenterX = context.blockX + CHUNK_SIZE / 2;
+        int chunkCenterZ = context.blockZ + CHUNK_SIZE / 2;
+
+        if (chunkCenterX * chunkCenterX + chunkCenterZ * chunkCenterZ < MIN_LUSH_CAVE_DISTANCE_SQ) {
+            return false;
+        }
+
         for (int dx = 4; dx < CHUNK_SIZE; dx += 4) {
             for (int dz = 4; dz < CHUNK_SIZE; dz += 4) {
                 if (isLushRegionColumn(context, context.blockX + dx, context.blockZ + dz)) {
