@@ -8,6 +8,7 @@ import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.BigDripleaf;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.DripleafStem;
 import com.canoestudio.retrofuturemc.contents.blocks.dripLeaf.SmallDripleaf;
 import com.canoestudio.retrofuturemc.contents.mobs.axolotl.EntityAxolotl;
+import com.canoestudio.retrofuturemc.contents.world.biome.ModCaveBiomes;
 import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesAPI;
 import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesConfig;
 import com.yungnickyoung.minecraft.bettercaves.noise.MojangNormalNoise;
@@ -46,10 +47,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_CAVE_MAX_Y = 58;
     private static final int LUSH_MIN_SURFACE_DEPTH = 12;
     private static final int DRIPSTONE_MIN_SURFACE_DEPTH = 12;
+    private static final int DRIPSTONE_SURFACE_CHANCE = 12;
+    private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 64;
+    private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 28;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = -0.06D;
+    private static final double LUSH_BIOME_THRESHOLD = 0.0D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
-    private static final double DRIPSTONE_REGION_THRESHOLD = -0.08D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = 0.12D;
+    private static final double DRIPSTONE_BIOME_THRESHOLD = 0.22D;
+    private static final double CAVE_BIOME_WIN_MARGIN = 0.04D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -425,10 +432,15 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         Random featureRandom = createFeatureRandom(world, DRIPSTONE_PATCH_SALT, Math.floorDiv(context.blockX, CHUNK_SIZE), Math.floorDiv(context.blockZ, CHUNK_SIZE));
         int minY = Math.max(DRIPSTONE_CAVE_MIN_Y, context.bottomY);
         int maxY = Math.min(DRIPSTONE_CAVE_MAX_Y, context.topY);
+        int[] budget = new int[] {DRIPSTONE_MAX_BLOCKS_PER_CHUNK, DRIPSTONE_MAX_COLUMNS_PER_CHUNK};
 
         for (int localX = 0; localX < CHUNK_SIZE; localX++) {
             for (int localZ = 0; localZ < CHUNK_SIZE; localZ++) {
                 for (int y = minY; y <= maxY; y++) {
+                    if (budget[0] <= 0 && budget[1] <= 0) {
+                        return;
+                    }
+
                     BlockPos pos = new BlockPos(context.blockX + localX, y, context.blockZ + localZ);
 
                     if (!context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH)) {
@@ -439,7 +451,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                         continue;
                     }
 
-                    decorateDripstoneSurface(context, featureRandom, pos);
+                    if (featureRandom.nextInt(100) >= DRIPSTONE_SURFACE_CHANCE) {
+                        continue;
+                    }
+
+                    decorateDripstoneSurface(context, featureRandom, pos, budget);
                 }
             }
         }
@@ -458,24 +474,55 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private boolean isLushBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
+        return getUndergroundCaveBiome(context, pos) == ModCaveBiomes.LUSH_CAVES;
+    }
+
+    private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
+        return getUndergroundCaveBiome(context, pos) == ModCaveBiomes.DRIPSTONE_CAVES;
+    }
+
+    private Biome getUndergroundCaveBiome(CaveDensityContext context, BlockPos pos) {
+        if (!context.isDeepEnough(pos, Math.min(LUSH_MIN_SURFACE_DEPTH, DRIPSTONE_MIN_SURFACE_DEPTH)) || context.world.canSeeSky(pos)) {
+            return null;
+        }
+
+        double lushScore = getLushCaveBiomeScore(context, pos);
+        double dripstoneScore = getDripstoneCaveBiomeScore(context, pos);
+        double lushStrength = lushScore - LUSH_BIOME_THRESHOLD;
+        double dripstoneStrength = dripstoneScore - DRIPSTONE_BIOME_THRESHOLD;
+        boolean lush = lushStrength > 0.0D;
+        boolean dripstone = dripstoneStrength > 0.0D;
+
+        if (lush && (!dripstone || lushStrength >= dripstoneStrength - CAVE_BIOME_WIN_MARGIN)) {
+            return ModCaveBiomes.LUSH_CAVES;
+        }
+
+        if (dripstone) {
+            return ModCaveBiomes.DRIPSTONE_CAVES;
+        }
+
+        return null;
+    }
+
+    private double getLushCaveBiomeScore(CaveDensityContext context, BlockPos pos) {
         double vertical = 1.0D - Math.min(1.0D, Math.abs(pos.getY() - 34.0D) / 42.0D);
         double region = context.biomeNoise.lushRegion.getValue(pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 0.065D, pos.getY() * 0.085D, pos.getZ() * 0.065D);
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > 0.0D;
+        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D;
     }
 
-    private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
+    private double getDripstoneCaveBiomeScore(CaveDensityContext context, BlockPos pos) {
         double region = context.biomeNoise.dripstoneRegion.getValue(pos.getX() * DRIPSTONE_REGION_SCALE, 0.0D, pos.getZ() * DRIPSTONE_REGION_SCALE);
         double detail = context.biomeNoise.dripstoneDetail.getValue(pos.getX() * 0.07D, pos.getY() * 0.1D, pos.getZ() * 0.07D);
         double ridged = 1.0D - Math.abs(context.biomeNoise.dripstoneRidge.getValue(pos.getX() * 0.13D, pos.getY() * 0.16D, pos.getZ() * 0.13D));
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.02D;
+        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D;
     }
 
-    private void decorateDripstoneSurface(CaveDensityContext context, Random random, BlockPos pos) {
+    private void decorateDripstoneSurface(CaveDensityContext context, Random random, BlockPos pos, int[] budget) {
         World world = context.world;
         IBlockState state = world.getBlockState(pos);
 
@@ -492,27 +539,32 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (random.nextInt(100) < 58) {
+        if (budget[0] > 0 && random.nextInt(100) < 34) {
             world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
+            budget[0]--;
         }
 
-        if (ceilingFace) {
+        if (ceilingFace && budget[1] > 0) {
             int ceilingRoll = random.nextInt(100);
 
-            if (ceilingRoll < 16) {
-                placePointedDripstone(world, below, EnumFacing.DOWN, 4 + random.nextInt(7));
-            } else if (ceilingRoll < 58) {
+            if (ceilingRoll < 4) {
+                placePointedDripstone(world, below, EnumFacing.DOWN, 3 + random.nextInt(5));
+                budget[1]--;
+            } else if (ceilingRoll < 24) {
                 placePointedDripstone(world, random, below, EnumFacing.DOWN);
+                budget[1]--;
             }
         }
 
-        if (floorFace) {
+        if (floorFace && budget[1] > 0) {
             int floorRoll = random.nextInt(100);
 
-            if (floorRoll < 12) {
-                placePointedDripstone(world, above, EnumFacing.UP, 3 + random.nextInt(6));
-            } else if (floorRoll < 44) {
+            if (floorRoll < 3) {
+                placePointedDripstone(world, above, EnumFacing.UP, 3 + random.nextInt(4));
+                budget[1]--;
+            } else if (floorRoll < 18) {
                 placePointedDripstone(world, random, above, EnumFacing.UP);
+                budget[1]--;
             }
         }
     }

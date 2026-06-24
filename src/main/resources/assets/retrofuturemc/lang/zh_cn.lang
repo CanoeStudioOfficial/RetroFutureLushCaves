@@ -26,6 +26,9 @@ tile.retrofuturemc.pale_oak_planks.name=苍白橡木木板
 item.retrofuturemc.glow_berries.name=发光浆果
 item.retrofuturemc.spyglass.name=望远镜
 
+biome.retrofuturemc.lush_caves=繁茂洞穴
+biome.retrofuturemc.dripstone_caves=溶洞
+
 entity.axolotl.name=美西螈
 entity.retrofuturemc.axolotl.name=美西螈
 entity.brown_mooshroom.name=棕色哞菇
