@@ -46,13 +46,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_CAVE_MAX_Y = 58;
     private static final int LUSH_MIN_SURFACE_DEPTH = 12;
     private static final int DRIPSTONE_MIN_SURFACE_DEPTH = 12;
-    private static final int DRIPSTONE_SURFACE_CHANCE = 12;
-    private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 64;
-    private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 28;
+    private static final int DRIPSTONE_SURFACE_CHANCE = 16;
+    private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 80;
+    private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 36;
     private static final double LUSH_REGION_SCALE = 0.012D;
-    private static final double LUSH_REGION_THRESHOLD = -0.06D;
+    private static final double LUSH_REGION_THRESHOLD = -0.14D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
-    private static final double DRIPSTONE_REGION_THRESHOLD = 0.12D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = 0.04D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -82,16 +82,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         if (caveContext == null) {
             return;
-        }
-
-        if (isLushRegionChunk(caveContext) && random.nextInt(getAzaleaTreeChanceForChunk(world, blockX, blockZ)) == 0) {
-            BlockPos azaleaTree = findSurfaceAzaleaTreePos(caveContext, random);
-            BlockPos lushCenter = azaleaTree == null || hasNearbyAzaleaTree(world, azaleaTree, AZALEA_TREE_MIN_SPACING) ? null : findCavePocketBelowAzalea(caveContext, random, azaleaTree);
-
-            if (lushCenter != null && generateSurfaceAzaleaTree(world, random, azaleaTree)) {
-                placeRootTrail(world, random, azaleaTree, lushCenter);
-                generateLushPocket(caveContext, random, azaleaTree, lushCenter);
-            }
         }
 
         generateNoiseLushRegions(caveContext);
@@ -475,7 +465,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 0.065D, pos.getY() * 0.085D, pos.getZ() * 0.065D);
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > 0.0D;
+        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > -0.04D;
     }
 
     private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -484,7 +474,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double ridged = 1.0D - Math.abs(context.biomeNoise.dripstoneRidge.getValue(pos.getX() * 0.13D, pos.getY() * 0.16D, pos.getZ() * 0.13D));
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.22D;
+        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.16D;
     }
 
     private void decorateDripstoneSurface(CaveDensityContext context, Random random, BlockPos pos, int[] budget) {
