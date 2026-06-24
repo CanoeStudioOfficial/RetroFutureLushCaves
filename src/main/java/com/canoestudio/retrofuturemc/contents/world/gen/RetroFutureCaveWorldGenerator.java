@@ -44,6 +44,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int LUSH_CAVE_MAX_Y = 62;
     private static final int DRIPSTONE_CAVE_MIN_Y = 8;
     private static final int DRIPSTONE_CAVE_MAX_Y = 58;
+    private static final int LUSH_MIN_SURFACE_DEPTH = 12;
+    private static final int DRIPSTONE_MIN_SURFACE_DEPTH = 12;
     private static final double LUSH_REGION_SCALE = 0.012D;
     private static final double LUSH_REGION_THRESHOLD = -0.06D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
@@ -168,6 +170,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         private final int surfaceCutoff;
         private final double densityThreshold;
         private final int[] surfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
+        private final int[] terrainSurfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
 
         private CaveDensityContext(World world, int blockX, int blockZ, BetterCavesConfig config, Mojang118CaveDensitySampler densitySampler) {
             this.world = world;
@@ -187,6 +190,14 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         private boolean isLikelyOpen(BlockPos pos, double margin) {
             return containsY(pos.getY()) && sampleCarverDensity(pos) <= densityThreshold + margin;
+        }
+
+        private boolean isDeepEnough(BlockPos pos, int minSurfaceDepth) {
+            return getTerrainSurfaceY(pos.getX(), pos.getZ()) - pos.getY() >= minSurfaceDepth;
+        }
+
+        private boolean isUndergroundOpenSpace(BlockPos pos, int minSurfaceDepth, double margin) {
+            return isDeepEnough(pos, minSurfaceDepth) && !world.canSeeSky(pos) && isLikelyOpen(pos, margin);
         }
 
         private double caveAffinity(BlockPos pos) {
@@ -230,6 +241,49 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             }
 
             return world.getHeight(new BlockPos(x, 0, z)).getY();
+        }
+
+        private int getTerrainSurfaceY(int x, int z) {
+            if (isInsideChunk(x, z)) {
+                int localX = x - blockX;
+                int localZ = z - blockZ;
+                int index = localX * CHUNK_SIZE + localZ;
+                int cached = terrainSurfaceYCache[index];
+
+                if (cached != 0) {
+                    return cached;
+                }
+
+                cached = findTerrainSurfaceY(x, z);
+                terrainSurfaceYCache[index] = cached;
+                return cached;
+            }
+
+            return findTerrainSurfaceY(x, z);
+        }
+
+        private int findTerrainSurfaceY(int x, int z) {
+            int top = Math.min(world.getActualHeight() - 1, getSurfaceY(x, z));
+
+            for (int y = top; y > 0; y--) {
+                IBlockState state = world.getBlockState(new BlockPos(x, y, z));
+
+                if (state.getBlock() == Blocks.AIR || isIgnoredSurfaceCover(state)) {
+                    continue;
+                }
+
+                return y;
+            }
+
+            return top;
+        }
+
+        private boolean isIgnoredSurfaceCover(IBlockState state) {
+            Material material = state.getMaterial();
+            return material == Material.LEAVES
+                    || material == Material.WOOD
+                    || material == Material.PLANTS
+                    || material == Material.VINE;
         }
 
         private boolean isInsideChunk(BlockPos pos) {
@@ -331,6 +385,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
                 for (int y = minY; y <= maxY; y++) {
                     BlockPos pos = new BlockPos(context.blockX + localX, y, context.blockZ + localZ);
 
+                    if (!context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)) {
+                        continue;
+                    }
+
                     if (!isLushBiomePatchNoise(context, pos)) {
                         continue;
                     }
@@ -343,8 +401,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos above = pos.up();
                     BlockPos below = pos.down();
-                    boolean openAbove = isAirOrWater(world, above) && context.isLikelyOpen(above, DENSITY_DECORATION_OPEN_MARGIN);
-                    boolean openBelow = world.isAirBlock(below) && context.isLikelyOpen(below, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean openAbove = isAirOrWater(world, above) && context.isUndergroundOpenSpace(above, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean openBelow = world.isAirBlock(below) && context.isUndergroundOpenSpace(below, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
 
                     if (openAbove && featureRandom.nextInt(100) < 42) {
                         decorateLushFloor(world, featureRandom, pos, context.blockX, context.blockZ);
@@ -372,6 +430,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             for (int localZ = 0; localZ < CHUNK_SIZE; localZ++) {
                 for (int y = minY; y <= maxY; y++) {
                     BlockPos pos = new BlockPos(context.blockX + localX, y, context.blockZ + localZ);
+
+                    if (!context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH)) {
+                        continue;
+                    }
 
                     if (!isDripstoneBiomePatchNoise(context, pos)) {
                         continue;
@@ -417,14 +479,14 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         World world = context.world;
         IBlockState state = world.getBlockState(pos);
 
-        if (!isNaturalCaveBlock(state.getBlock()) || world.canSeeSky(pos)) {
+        if (!context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH) || !isNaturalCaveBlock(state.getBlock()) || world.canSeeSky(pos)) {
             return;
         }
 
         BlockPos above = pos.up();
         BlockPos below = pos.down();
-        boolean floorFace = world.isAirBlock(above) && context.isLikelyOpen(above, DENSITY_DECORATION_OPEN_MARGIN);
-        boolean ceilingFace = world.isAirBlock(below) && context.isLikelyOpen(below, DENSITY_DECORATION_OPEN_MARGIN);
+        boolean floorFace = world.isAirBlock(above) && context.isUndergroundOpenSpace(above, DRIPSTONE_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
+        boolean ceilingFace = world.isAirBlock(below) && context.isUndergroundOpenSpace(below, DRIPSTONE_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
 
         if (!floorFace && !ceilingFace) {
             return;
@@ -566,6 +628,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         return context.isInsideChunk(pos)
                 && context.world.isAirBlock(pos)
                 && !context.world.canSeeSky(pos)
+                && context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)
                 && context.isLikelyOpen(pos, DENSITY_COLUMN_OPEN_MARGIN)
                 && hasNearbySolid(context.world, pos, nearbySolidRadius, context.blockX, context.blockZ);
     }
@@ -603,8 +666,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
                     BlockPos above = pos.up();
                     BlockPos below = pos.down();
-                    boolean openAbove = isAirOrWater(world, above) && context.isLikelyOpen(above, DENSITY_DECORATION_OPEN_MARGIN);
-                    boolean openBelow = world.isAirBlock(below) && context.isLikelyOpen(below, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean openAbove = isAirOrWater(world, above) && context.isUndergroundOpenSpace(above, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
+                    boolean openBelow = world.isAirBlock(below) && context.isUndergroundOpenSpace(below, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
 
                     if (openAbove) {
                         decorateLushFloor(world, random, pos, context.blockX, context.blockZ);
