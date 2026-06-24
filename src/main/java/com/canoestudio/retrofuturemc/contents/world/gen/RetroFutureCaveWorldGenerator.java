@@ -46,17 +46,21 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_CAVE_MAX_Y = 58;
     private static final int LUSH_MIN_SURFACE_DEPTH = 12;
     private static final int DRIPSTONE_MIN_SURFACE_DEPTH = 12;
-    private static final int DRIPSTONE_SURFACE_CHANCE = 16;
-    private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 80;
-    private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 36;
+    private static final int DRIPSTONE_CLUSTER_SEARCH_RANGE = 12;
+    private static final int DRIPSTONE_CLUSTER_MIN_ATTEMPTS = 4;
+    private static final int DRIPSTONE_CLUSTER_MAX_ATTEMPTS = 7;
+    private static final int DRIPSTONE_LARGE_FEATURE_CHANCE = 24;
+    private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 180;
+    private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 72;
     private static final double LUSH_REGION_SCALE = 0.012D;
-    private static final double LUSH_REGION_THRESHOLD = -0.14D;
+    private static final double LUSH_REGION_THRESHOLD = -0.22D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
-    private static final double DRIPSTONE_REGION_THRESHOLD = 0.04D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = 0.1D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     private static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
+    private static final int NO_SURFACE = -1;
     private BetterCavesConfig cachedBetterCavesConfig;
     private int cachedBetterCavesConfigDimension = Integer.MIN_VALUE;
     private Mojang118CaveDensitySampler cachedDensitySampler;
@@ -419,31 +423,24 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         int minY = Math.max(DRIPSTONE_CAVE_MIN_Y, context.bottomY);
         int maxY = Math.min(DRIPSTONE_CAVE_MAX_Y, context.topY);
         int[] budget = new int[] {DRIPSTONE_MAX_BLOCKS_PER_CHUNK, DRIPSTONE_MAX_COLUMNS_PER_CHUNK};
+        int clusterAttempts = DRIPSTONE_CLUSTER_MIN_ATTEMPTS + featureRandom.nextInt(DRIPSTONE_CLUSTER_MAX_ATTEMPTS - DRIPSTONE_CLUSTER_MIN_ATTEMPTS + 1);
 
-        for (int localX = 0; localX < CHUNK_SIZE; localX++) {
-            for (int localZ = 0; localZ < CHUNK_SIZE; localZ++) {
-                for (int y = minY; y <= maxY; y++) {
-                    if (budget[0] <= 0 && budget[1] <= 0) {
-                        return;
-                    }
-
-                    BlockPos pos = new BlockPos(context.blockX + localX, y, context.blockZ + localZ);
-
-                    if (!context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH)) {
-                        continue;
-                    }
-
-                    if (!isDripstoneBiomePatchNoise(context, pos)) {
-                        continue;
-                    }
-
-                    if (featureRandom.nextInt(100) >= DRIPSTONE_SURFACE_CHANCE) {
-                        continue;
-                    }
-
-                    decorateDripstoneSurface(context, featureRandom, pos, budget);
-                }
+        for (int attempt = 0; attempt < clusterAttempts; attempt++) {
+            if (budget[0] <= 0 && budget[1] <= 0) {
+                return;
             }
+
+            BlockPos origin = findDripstoneClusterOrigin(context, featureRandom, minY, maxY);
+
+            if (origin == null) {
+                continue;
+            }
+
+            if (featureRandom.nextInt(100) < DRIPSTONE_LARGE_FEATURE_CHANCE) {
+                placeLargeDripstoneFeature(context, featureRandom, origin, budget);
+            }
+
+            placeDripstoneCluster(context, featureRandom, origin, budget);
         }
     }
 
@@ -465,7 +462,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 0.065D, pos.getY() * 0.085D, pos.getZ() * 0.065D);
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > -0.04D;
+        return region * 0.52D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.34D > -0.1D;
     }
 
     private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -474,7 +471,234 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double ridged = 1.0D - Math.abs(context.biomeNoise.dripstoneRidge.getValue(pos.getX() * 0.13D, pos.getY() * 0.16D, pos.getZ() * 0.13D));
         double caveAffinity = context.caveAffinity(pos);
 
-        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.16D;
+        return region * 0.42D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.28D > 0.14D;
+    }
+
+    private BlockPos findDripstoneClusterOrigin(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < 36; attempt++) {
+            BlockPos pos = new BlockPos(
+                    context.blockX + random.nextInt(CHUNK_SIZE),
+                    minY + random.nextInt(Math.max(1, maxY - minY + 1)),
+                    context.blockZ + random.nextInt(CHUNK_SIZE));
+
+            if (!isAirOrWater(context.world, pos) || !context.isUndergroundOpenSpace(pos, DRIPSTONE_MIN_SURFACE_DEPTH, DENSITY_COLUMN_OPEN_MARGIN)) {
+                continue;
+            }
+
+            if (!isDripstoneBiomePatchNoise(context, pos)) {
+                continue;
+            }
+
+            if (findDripstoneFloorY(context, pos, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE && findDripstoneCeilingY(context, pos, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE) {
+                return pos;
+            }
+        }
+
+        return null;
+    }
+
+    private void placeDripstoneCluster(CaveDensityContext context, Random random, BlockPos origin, int[] budget) {
+        int xRadius = 2 + random.nextInt(7);
+        int zRadius = 2 + random.nextInt(7);
+        int clusterHeight = 3 + random.nextInt(4);
+        double density = 0.3D + random.nextDouble() * 0.4D;
+        int baseLayerThickness = 2 + random.nextInt(3);
+
+        for (int dx = -xRadius; dx <= xRadius; dx++) {
+            for (int dz = -zRadius; dz <= zRadius; dz++) {
+                if (budget[0] <= 0 && budget[1] <= 0) {
+                    return;
+                }
+
+                double ellipse = (dx * dx) / (double)(xRadius * xRadius) + (dz * dz) / (double)(zRadius * zRadius);
+
+                if (ellipse > 1.0D) {
+                    continue;
+                }
+
+                BlockPos columnOrigin = origin.add(dx, 0, dz);
+
+                if (!context.isInsideChunk(columnOrigin) || !context.isDeepEnough(columnOrigin, DRIPSTONE_MIN_SURFACE_DEPTH) || !isDripstoneBiomePatchNoise(context, columnOrigin)) {
+                    continue;
+                }
+
+                double chance = getClusterColumnChance(xRadius, zRadius, dx, dz) * density;
+
+                if (random.nextDouble() > chance) {
+                    continue;
+                }
+
+                int floorY = findDripstoneFloorY(context, columnOrigin, DRIPSTONE_CLUSTER_SEARCH_RANGE);
+                int ceilingY = findDripstoneCeilingY(context, columnOrigin, DRIPSTONE_CLUSTER_SEARCH_RANGE);
+
+                if (floorY == NO_SURFACE && ceilingY == NO_SURFACE) {
+                    continue;
+                }
+
+                int maxHeight = getClusterMaxHeight(clusterHeight, xRadius, zRadius, dx, dz);
+                int stalactiteHeight = ceilingY == NO_SURFACE ? 0 : getClusterSpeleothemHeight(random, density, maxHeight);
+                int stalagmiteHeight = floorY == NO_SURFACE ? 0 : Math.max(0, stalactiteHeight + random.nextInt(3) - 1);
+
+                if (ceilingY != NO_SURFACE && floorY != NO_SURFACE) {
+                    int caveHeight = Math.max(1, ceilingY - floorY - 1);
+                    int combined = stalactiteHeight + stalagmiteHeight;
+
+                    if (combined >= caveHeight) {
+                        stalactiteHeight = Math.max(0, caveHeight / 2);
+                        stalagmiteHeight = Math.max(0, caveHeight - stalactiteHeight - 1);
+                    }
+                }
+
+                if (ceilingY != NO_SURFACE) {
+                    placeDripstoneBaseLayer(context, new BlockPos(columnOrigin.getX(), ceilingY, columnOrigin.getZ()), EnumFacing.UP, baseLayerThickness, budget);
+                    placePointedDripstoneWithBudget(context.world, new BlockPos(columnOrigin.getX(), ceilingY - 1, columnOrigin.getZ()), EnumFacing.DOWN, stalactiteHeight, budget);
+                }
+
+                if (floorY != NO_SURFACE) {
+                    placeDripstoneBaseLayer(context, new BlockPos(columnOrigin.getX(), floorY, columnOrigin.getZ()), EnumFacing.DOWN, baseLayerThickness, budget);
+                    placePointedDripstoneWithBudget(context.world, new BlockPos(columnOrigin.getX(), floorY + 1, columnOrigin.getZ()), EnumFacing.UP, stalagmiteHeight, budget);
+                }
+            }
+        }
+    }
+
+    private void placeLargeDripstoneFeature(CaveDensityContext context, Random random, BlockPos origin, int[] budget) {
+        int floorY = findDripstoneFloorY(context, origin, 16);
+        int ceilingY = findDripstoneCeilingY(context, origin, 16);
+
+        if (floorY == NO_SURFACE || ceilingY == NO_SURFACE) {
+            return;
+        }
+
+        int caveHeight = ceilingY - floorY - 1;
+
+        if (caveHeight < 6) {
+            return;
+        }
+
+        int maxRadius = Math.max(2, Math.min(5, caveHeight / 3));
+        int radius = 2 + random.nextInt(maxRadius - 1);
+        double scale = 0.55D + random.nextDouble() * 1.25D;
+        double stalactiteBluntness = 0.3D + random.nextDouble() * 0.6D;
+        double stalagmiteBluntness = 0.4D + random.nextDouble() * 0.6D;
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                double distance = Math.sqrt(dx * dx + dz * dz);
+
+                if (distance > radius) {
+                    continue;
+                }
+
+                int stalactiteHeight = Math.min(caveHeight - 2, getLargeDripstoneHeight(distance, radius, scale, stalactiteBluntness));
+                int stalagmiteHeight = Math.min(caveHeight - 2, getLargeDripstoneHeight(distance, radius, scale, stalagmiteBluntness));
+
+                if (stalactiteHeight + stalagmiteHeight >= caveHeight) {
+                    int total = Math.max(1, caveHeight - 1);
+                    stalactiteHeight = total / 2;
+                    stalagmiteHeight = total - stalactiteHeight;
+                }
+
+                for (int y = 0; y < stalactiteHeight && budget[0] > 0; y++) {
+                    placeLargeDripstoneBlock(context, origin.add(dx, ceilingY - origin.getY() - 1 - y, dz), budget);
+                }
+
+                for (int y = 0; y < stalagmiteHeight && budget[0] > 0; y++) {
+                    placeLargeDripstoneBlock(context, origin.add(dx, floorY - origin.getY() + 1 + y, dz), budget);
+                }
+            }
+        }
+    }
+
+    private void placeLargeDripstoneBlock(CaveDensityContext context, BlockPos pos, int[] budget) {
+        if (budget[0] <= 0 || !context.isInsideChunk(pos) || !isAirOrWater(context.world, pos)) {
+            return;
+        }
+
+        context.world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
+        budget[0]--;
+    }
+
+    private int findDripstoneFloorY(CaveDensityContext context, BlockPos pos, int range) {
+        for (int dy = 0; dy <= range && pos.getY() - dy > 0; dy++) {
+            BlockPos check = pos.down(dy);
+            IBlockState state = context.world.getBlockState(check);
+
+            if (isAirOrWater(context.world, check)) {
+                continue;
+            }
+
+            return isNaturalCaveBlock(state.getBlock()) ? check.getY() : NO_SURFACE;
+        }
+
+        return NO_SURFACE;
+    }
+
+    private int findDripstoneCeilingY(CaveDensityContext context, BlockPos pos, int range) {
+        for (int dy = 0; dy <= range && pos.getY() + dy < context.world.getActualHeight() - 1; dy++) {
+            BlockPos check = pos.up(dy);
+            IBlockState state = context.world.getBlockState(check);
+
+            if (isAirOrWater(context.world, check)) {
+                continue;
+            }
+
+            return isNaturalCaveBlock(state.getBlock()) ? check.getY() : NO_SURFACE;
+        }
+
+        return NO_SURFACE;
+    }
+
+    private void placeDripstoneBaseLayer(CaveDensityContext context, BlockPos firstPos, EnumFacing intoStone, int maxCount, int[] budget) {
+        for (int i = 0; i < maxCount && budget[0] > 0; i++) {
+            BlockPos pos = firstPos.offset(intoStone, i);
+            IBlockState state = context.world.getBlockState(pos);
+
+            if (!context.isInsideChunk(pos) || !isNaturalCaveBlock(state.getBlock())) {
+                return;
+            }
+
+            context.world.setBlockState(pos, ModBlocks.DRIPSTONE_BLOCK.getDefaultState(), 2);
+            budget[0]--;
+        }
+    }
+
+    private void placePointedDripstoneWithBudget(World world, BlockPos start, EnumFacing direction, int height, int[] budget) {
+        if (height <= 0 || budget[1] <= 0 || !isAirOrWater(world, start)) {
+            return;
+        }
+
+        placePointedDripstone(world, start, direction, height);
+        budget[1]--;
+    }
+
+    private double getClusterColumnChance(int xRadius, int zRadius, int dx, int dz) {
+        int xDistanceFromEdge = xRadius - Math.abs(dx);
+        int zDistanceFromEdge = zRadius - Math.abs(dz);
+        int distanceFromEdge = Math.min(xDistanceFromEdge, zDistanceFromEdge);
+        return 0.1D + 0.9D * Math.min(1.0D, distanceFromEdge / 3.0D);
+    }
+
+    private int getClusterMaxHeight(int clusterHeight, int xRadius, int zRadius, int dx, int dz) {
+        double distanceFromCenter = Math.abs(dx) + Math.abs(dz);
+        double maxDistance = Math.max(1.0D, xRadius + zRadius);
+        double centerBias = 1.0D - Math.min(1.0D, distanceFromCenter / maxDistance);
+        return Math.max(1, (int)Math.round(clusterHeight * (0.3D + centerBias * 0.7D)));
+    }
+
+    private int getClusterSpeleothemHeight(Random random, double density, int maxHeight) {
+        if (maxHeight <= 0 || random.nextDouble() > density) {
+            return 0;
+        }
+
+        return 1 + random.nextInt(maxHeight);
+    }
+
+    private int getLargeDripstoneHeight(double distance, int radius, double scale, double bluntness) {
+        distance = Math.max(distance, bluntness);
+        double normalized = distance / radius * 0.384D;
+        double height = scale * (0.75D * Math.pow(normalized, 4.0D / 3.0D) - Math.pow(normalized, 2.0D / 3.0D) - Math.log(normalized) / 3.0D);
+        return Math.max(0, (int)Math.round(Math.max(0.0D, height) / 0.384D * radius));
     }
 
     private void decorateDripstoneSurface(CaveDensityContext context, Random random, BlockPos pos, int[] budget) {
