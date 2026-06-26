@@ -62,14 +62,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int LUSH_CLAY_POOL_VERTICAL_RANGE = 5;
     private static final float LUSH_CLAY_PATCH_VEGETATION_CHANCE = 0.05F;
     private static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
-    private static final double CAVE_REGION_SELECTOR_SCALE = 0.0055D;
-    private static final double CAVE_REGION_DETAIL_SCALE = 0.03D;
+    private static final double CAVE_CLIMATE_SCALE = 0.006D;
+    private static final double CAVE_CLIMATE_DETAIL_SCALE = 0.028D;
+    private static final double LUSH_CAVE_HUMIDITY_MIN = 0.72D;
+    private static final double DRIPSTONE_CAVE_CONTINENTALNESS_MIN = 0.82D;
     private static final double LUSH_REGION_SCALE = 0.012D;
-    private static final double LUSH_REGION_THRESHOLD = 0.28D;
+    private static final double LUSH_REGION_THRESHOLD = 0.32D;
     private static final double DRIPSTONE_REGION_SCALE = 0.011D;
     private static final double DRIPSTONE_REGION_THRESHOLD = 0.3D;
     private static final double CAVE_REGION_TYPE_MARGIN = 0.06D;
-    private static final double LUSH_SURFACE_REGION_BOOST = 0.18D;
+    private static final double LUSH_SURFACE_HUMIDITY_BONUS = 0.05D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -158,8 +160,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private static final class CaveBiomeNoise {
-        private final MojangNormalNoise caveRegionSelector;
-        private final MojangNormalNoise caveRegionDetail;
+        private final MojangNormalNoise caveHumidity;
+        private final MojangNormalNoise caveContinentalness;
+        private final MojangNormalNoise caveErosion;
+        private final MojangNormalNoise caveWeirdness;
+        private final MojangNormalNoise caveClimateDetail;
         private final MojangNormalNoise lushRegion;
         private final MojangNormalNoise lushDetail;
         private final MojangNormalNoise lushPatch;
@@ -169,8 +174,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         private final MojangNormalNoise dripstoneRidge;
 
         private CaveBiomeNoise(long seed) {
-            this.caveRegionSelector = MojangNormalNoise.create(seed, "retro_cave_region_selector", -8, 1.0D);
-            this.caveRegionDetail = MojangNormalNoise.create(seed, "retro_cave_region_detail", -7, 1.0D);
+            this.caveHumidity = MojangNormalNoise.create(seed, "retro_cave_humidity", -8, 1.0D);
+            this.caveContinentalness = MojangNormalNoise.create(seed, "retro_cave_continentalness", -8, 1.0D);
+            this.caveErosion = MojangNormalNoise.create(seed, "retro_cave_erosion", -8, 1.0D);
+            this.caveWeirdness = MojangNormalNoise.create(seed, "retro_cave_weirdness", -8, 1.0D);
+            this.caveClimateDetail = MojangNormalNoise.create(seed, "retro_cave_climate_detail", -7, 1.0D);
             this.lushRegion = MojangNormalNoise.create(seed, "retro_lush_caves_region", -8, 1.0D);
             this.lushDetail = MojangNormalNoise.create(seed, "retro_lush_caves_detail", -7, 1.0D);
             this.lushPatch = MojangNormalNoise.create(seed, "retro_lush_caves_patch", -7, 1.0D);
@@ -490,7 +498,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double surfaceInfluence = getLushSurfaceInfluence(context.world, pos.getX(), pos.getZ());
 
         return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.LUSH
-                && region * 0.44D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.32D + surfaceInfluence * 0.18D > 0.0D;
+                && region * 0.48D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.3D + surfaceInfluence * 0.08D > 0.06D;
     }
 
     private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -1387,28 +1395,42 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return CaveRegionType.NONE;
         }
 
-        double selector = context.biomeNoise.caveRegionSelector.getValue(x * CAVE_REGION_SELECTOR_SCALE, 0.0D, z * CAVE_REGION_SELECTOR_SCALE);
-        double detail = context.biomeNoise.caveRegionDetail.getValue(x * CAVE_REGION_DETAIL_SCALE, 0.0D, z * CAVE_REGION_DETAIL_SCALE);
-        double selectorValue = selector * 0.82D + detail * 0.18D;
+        double humidity = getCaveHumidity(context, x, z);
+        double continentalness = getCaveContinentalness(context, x, z);
         double lushScore = getLushRegionScore(context, x, z);
         double dripstoneScore = getDripstoneRegionScore(context, x, z);
+        boolean lushClimate = humidity >= LUSH_CAVE_HUMIDITY_MIN;
+        boolean dripstoneClimate = continentalness >= DRIPSTONE_CAVE_CONTINENTALNESS_MIN;
 
-        if (lushScore >= LUSH_REGION_THRESHOLD && lushScore > dripstoneScore + CAVE_REGION_TYPE_MARGIN && selectorValue < 0.42D + getLushSurfaceInfluence(context.world, x, z) * LUSH_SURFACE_REGION_BOOST) {
-            return CaveRegionType.LUSH;
-        }
-
-        if (dripstoneScore >= DRIPSTONE_REGION_THRESHOLD && dripstoneScore > lushScore + CAVE_REGION_TYPE_MARGIN && selectorValue > -0.46D) {
+        if (dripstoneClimate && dripstoneScore >= DRIPSTONE_REGION_THRESHOLD && (!lushClimate || dripstoneScore >= lushScore + CAVE_REGION_TYPE_MARGIN)) {
             return CaveRegionType.DRIPSTONE;
         }
 
+        if (lushClimate && lushScore >= LUSH_REGION_THRESHOLD && (!dripstoneClimate || lushScore > dripstoneScore + CAVE_REGION_TYPE_MARGIN)) {
+            return CaveRegionType.LUSH;
+        }
+
         return CaveRegionType.NONE;
+    }
+
+    private double getCaveHumidity(CaveDensityContext context, int x, int z) {
+        double humidity = context.biomeNoise.caveHumidity.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
+        double detail = context.biomeNoise.caveClimateDetail.getValue(x * CAVE_CLIMATE_DETAIL_SCALE, 0.0D, z * CAVE_CLIMATE_DETAIL_SCALE);
+        return humidity * 0.78D + detail * 0.12D + getLushSurfaceInfluence(context.world, x, z) * LUSH_SURFACE_HUMIDITY_BONUS;
+    }
+
+    private double getCaveContinentalness(CaveDensityContext context, int x, int z) {
+        double continentalness = context.biomeNoise.caveContinentalness.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
+        double erosion = context.biomeNoise.caveErosion.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
+        double weirdness = context.biomeNoise.caveWeirdness.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
+        return continentalness * 0.74D + (1.0D - Math.abs(erosion)) * 0.18D + Math.max(0.0D, weirdness) * 0.08D;
     }
 
     private double getLushRegionScore(CaveDensityContext context, int x, int z) {
         double region = context.biomeNoise.lushRegion.getValue(x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushDetail.getValue(x * 0.036D, 0.0D, z * 0.036D);
         double surfaceInfluence = getLushSurfaceInfluence(context.world, x, z);
-        return region * 0.68D + detail * 0.22D + surfaceInfluence * 0.2D;
+        return region * 0.72D + detail * 0.22D + surfaceInfluence * 0.08D;
     }
 
     private double getDripstoneRegionScore(CaveDensityContext context, int x, int z) {
