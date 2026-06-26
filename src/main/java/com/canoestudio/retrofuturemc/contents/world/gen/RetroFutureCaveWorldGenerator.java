@@ -56,11 +56,13 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int LUSH_CLAY_POOL_VERTICAL_RANGE = 5;
     private static final float LUSH_CLAY_PATCH_VEGETATION_CHANCE = 0.05F;
     private static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
+    private static final double CAVE_TYPE_SELECTOR_SCALE = 0.006D;
+    private static final double LUSH_TYPE_SELECTOR_MAX = 0.24D;
     private static final double LUSH_REGION_SCALE = 0.01D;
-    private static final double LUSH_REGION_THRESHOLD = -0.04D;
+    private static final double LUSH_REGION_THRESHOLD = -0.12D;
     private static final double DRIPSTONE_REGION_SCALE = 0.01D;
-    private static final double DRIPSTONE_REGION_THRESHOLD = -0.02D;
-    private static final double CAVE_REGION_TYPE_MARGIN = 0.035D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = 0.06D;
+    private static final double CAVE_REGION_TYPE_MARGIN = 0.08D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -149,6 +151,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private static final class CaveBiomeNoise {
+        private final MojangNormalNoise caveTypeSelector;
         private final MojangNormalNoise lushRegion;
         private final MojangNormalNoise lushDetail;
         private final MojangNormalNoise lushPatch;
@@ -158,6 +161,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         private final MojangNormalNoise dripstoneRidge;
 
         private CaveBiomeNoise(long seed) {
+            this.caveTypeSelector = MojangNormalNoise.create(seed, "retro_cave_type_selector", -8, 1.0D);
             this.lushRegion = MojangNormalNoise.create(seed, "retro_lush_caves_region", -8, 1.0D);
             this.lushDetail = MojangNormalNoise.create(seed, "retro_lush_caves_detail", -7, 1.0D);
             this.lushPatch = MojangNormalNoise.create(seed, "retro_lush_caves_patch", -7, 1.0D);
@@ -1305,15 +1309,21 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         boolean canLush = hasLushOpening && lushScore >= LUSH_REGION_THRESHOLD;
         boolean canDripstone = hasDripstoneOpening && dripstoneScore >= DRIPSTONE_REGION_THRESHOLD;
 
-        if (canDripstone && (!canLush || dripstoneScore >= lushScore + CAVE_REGION_TYPE_MARGIN)) {
-            return CaveRegionType.DRIPSTONE;
+        if (!canLush && !canDripstone) {
+            return CaveRegionType.NONE;
         }
 
-        if (canLush) {
+        double selector = context.biomeNoise.caveTypeSelector.getValue(x * CAVE_TYPE_SELECTOR_SCALE, 0.0D, z * CAVE_TYPE_SELECTOR_SCALE);
+
+        if (canLush && (!canDripstone || selector <= LUSH_TYPE_SELECTOR_MAX || lushScore >= dripstoneScore + CAVE_REGION_TYPE_MARGIN)) {
             return CaveRegionType.LUSH;
         }
 
-        return CaveRegionType.NONE;
+        if (canDripstone) {
+            return CaveRegionType.DRIPSTONE;
+        }
+
+        return CaveRegionType.LUSH;
     }
 
     private double getLushRegionScore(CaveDensityContext context, int x, int z) {
