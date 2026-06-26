@@ -15,6 +15,8 @@ import com.yungnickyoung.minecraft.bettercaves.world.carver.cave.mojang.Mojang11
 import git.jbredwards.fluidlogged_api.api.util.FluidState;
 import git.jbredwards.fluidlogged_api.api.util.FluidloggedUtils;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockDoublePlant;
+import net.minecraft.block.BlockTallGrass;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.IEntityLivingData;
@@ -46,7 +48,24 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int DRIPSTONE_LARGE_FEATURE_CHANCE = 24;
     private static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 180;
     private static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 72;
-    private static final int LUSH_CLAY_DRIPLEAF_PATCH_CHANCE = 8;
+    private static final int LUSH_MOSS_PATCH_ATTEMPTS = 125;
+    private static final int LUSH_CEILING_MOSS_PATCH_ATTEMPTS = 125;
+    private static final int LUSH_CLAY_PATCH_ATTEMPTS = 62;
+    private static final int LUSH_CAVE_VINE_ATTEMPTS = 188;
+    private static final int LUSH_SPORE_BLOSSOM_ATTEMPTS = 25;
+    private static final int LUSH_AXOLOTL_GROUP_CHANCE = 5;
+    private static final int LUSH_AXOLOTL_CLAY_POOL_CHANCE = 8;
+    private static final int LUSH_AXOLOTL_MIN_GROUP_SIZE = 4;
+    private static final int LUSH_AXOLOTL_MAX_GROUP_SIZE = 6;
+    private static final int LUSH_MOSS_PATCH_RADIUS_MIN = 4;
+    private static final int LUSH_MOSS_PATCH_RADIUS_MAX = 7;
+    private static final int LUSH_MOSS_PATCH_DEPTH = 1;
+    private static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MIN = 1;
+    private static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MAX = 2;
+    private static final int LUSH_MOSS_PATCH_VERTICAL_RANGE = 5;
+    private static final float LUSH_MOSS_PATCH_EDGE_CHANCE = 0.3F;
+    private static final float LUSH_MOSS_PATCH_VEGETATION_CHANCE = 0.8F;
+    private static final float LUSH_CEILING_MOSS_PATCH_VINE_CHANCE = 0.08F;
     private static final int LUSH_DRIPLEAF_PATCH_RADIUS_MIN = 4;
     private static final int LUSH_DRIPLEAF_PATCH_RADIUS_MAX = 7;
     private static final int LUSH_DRIPLEAF_PATCH_BASE_DEPTH = 3;
@@ -319,40 +338,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         int minY = Math.max(LUSH_CAVE_MIN_Y, context.bottomY);
         int maxY = Math.min(LUSH_CAVE_MAX_Y, context.topY);
 
-        for (int localX = 0; localX < CHUNK_SIZE; localX++) {
-            for (int localZ = 0; localZ < CHUNK_SIZE; localZ++) {
-                for (int y = minY; y <= maxY; y++) {
-                    BlockPos pos = new BlockPos(context.blockX + localX, y, context.blockZ + localZ);
-
-                    if (!context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)) {
-                        continue;
-                    }
-
-                    if (!isLushBiomePatchNoise(context, pos)) {
-                        continue;
-                    }
-
-                    IBlockState state = world.getBlockState(pos);
-
-                    if (!isLushReplaceable(state.getBlock()) || world.canSeeSky(pos)) {
-                        continue;
-                    }
-
-                    BlockPos above = pos.up();
-                    BlockPos below = pos.down();
-                    boolean openAbove = isAirOrWater(world, above) && context.isUndergroundOpenSpace(above, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
-                    boolean openBelow = world.isAirBlock(below) && context.isUndergroundOpenSpace(below, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN);
-
-                    if (openAbove && featureRandom.nextInt(100) < 42) {
-                        decorateLushFloor(world, featureRandom, pos, context.blockX, context.blockZ);
-                    }
-
-                    if (openBelow && featureRandom.nextInt(100) < 38) {
-                        decorateLushCeiling(world, featureRandom, pos);
-                    }
-                }
-            }
-        }
+        placeLushFloorMossPatches(context, featureRandom, minY, maxY);
+        placeLushCeilingMossPatches(context, featureRandom, minY, maxY);
+        placeLushClayPatches(context, featureRandom, minY, maxY);
+        placeLushCaveVines(context, featureRandom, minY, maxY);
+        placeLushSporeBlossoms(context, featureRandom, minY, maxY);
+        spawnLushAxolotlGroups(context, featureRandom, minY, maxY);
     }
 
     private void generateDripstoneRegions(CaveDensityContext context) {
@@ -384,6 +375,303 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
             placeDripstoneCluster(context, featureRandom, origin, budget);
         }
+    }
+
+    private void placeLushFloorMossPatches(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < LUSH_MOSS_PATCH_ATTEMPTS; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos floor = findLushSurface(context, start, EnumFacing.DOWN, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+
+            if (floor != null) {
+                placeMossPatch(context, random, floor, false);
+            }
+        }
+    }
+
+    private void placeLushCeilingMossPatches(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < LUSH_CEILING_MOSS_PATCH_ATTEMPTS; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos ceiling = findLushSurface(context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+
+            if (ceiling != null) {
+                placeMossPatch(context, random, ceiling, true);
+            }
+        }
+    }
+
+    private void placeLushClayPatches(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < LUSH_CLAY_PATCH_ATTEMPTS; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos floor = findLushSurface(context, start, EnumFacing.DOWN, LUSH_CLAY_POOL_VERTICAL_RANGE);
+
+            if (floor != null && tryPlaceClayPatchWithDripleaves(context.world, random, floor, context.blockX, context.blockZ)) {
+                maybeSpawnAxolotlGroupNearClayPool(context, random, floor);
+            }
+        }
+    }
+
+    private void placeLushCaveVines(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < LUSH_CAVE_VINE_ATTEMPTS; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos ceiling = findLushSurface(context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+
+            if (ceiling != null) {
+                BlockPos below = ceiling.down();
+
+                if (context.world.isAirBlock(below)) {
+                    placeCaveVine(context.world, random, below);
+                }
+            }
+        }
+    }
+
+    private void placeLushSporeBlossoms(CaveDensityContext context, Random random, int minY, int maxY) {
+        for (int attempt = 0; attempt < LUSH_SPORE_BLOSSOM_ATTEMPTS; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos ceiling = findLushSurface(context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+
+            if (ceiling != null) {
+                BlockPos below = ceiling.down();
+
+                if (context.world.isAirBlock(below) && ModBlocks.SPORE_BLOSSOM.canPlaceBlockAt(context.world, below)) {
+                    context.world.setBlockState(below, ModBlocks.SPORE_BLOSSOM.getDefaultState(), 2);
+                }
+            }
+        }
+    }
+
+    private void spawnLushAxolotlGroups(CaveDensityContext context, Random random, int minY, int maxY) {
+        if (random.nextInt(LUSH_AXOLOTL_GROUP_CHANCE) != 0) {
+            return;
+        }
+
+        for (int attempt = 0; attempt < 8; attempt++) {
+            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos water = findLushWaterSpawnPos(context, random, start, 8);
+
+            if (water != null) {
+                int count = LUSH_AXOLOTL_MIN_GROUP_SIZE + random.nextInt(LUSH_AXOLOTL_MAX_GROUP_SIZE - LUSH_AXOLOTL_MIN_GROUP_SIZE + 1);
+                spawnAxolotlGroup(context.world, random, water, count, context.blockX, context.blockZ);
+                return;
+            }
+        }
+    }
+
+    private BlockPos randomLushFeatureStart(CaveDensityContext context, Random random, int minY, int maxY) {
+        return new BlockPos(context.blockX + random.nextInt(CHUNK_SIZE), minY + random.nextInt(Math.max(1, maxY - minY + 1)), context.blockZ + random.nextInt(CHUNK_SIZE));
+    }
+
+    private BlockPos findLushSurface(CaveDensityContext context, BlockPos start, EnumFacing direction, int maxSteps) {
+        if (!context.isInsideChunk(start) || !isLushRegionColumn(context, start.getX(), start.getZ())) {
+            return null;
+        }
+
+        BlockPos scan = start;
+        int offset = 0;
+
+        while (offset < maxSteps && context.isInsideChunk(scan) && context.containsY(scan.getY()) && context.world.isAirBlock(scan)) {
+            scan = scan.offset(direction);
+            offset++;
+        }
+
+        offset = 0;
+        EnumFacing outward = direction.getOpposite();
+
+        while (offset < maxSteps && context.isInsideChunk(scan) && context.containsY(scan.getY()) && !context.world.isAirBlock(scan)) {
+            scan = scan.offset(outward);
+            offset++;
+        }
+
+        if (!context.isInsideChunk(scan)
+                || !context.containsY(scan.getY())
+                || !context.world.isAirBlock(scan)
+                || !context.isDeepEnough(scan, LUSH_MIN_SURFACE_DEPTH)
+                || context.world.canSeeSky(scan)
+                || !context.isUndergroundOpenSpace(scan, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN)) {
+            return null;
+        }
+
+        BlockPos surface = scan.offset(direction);
+
+        if (!context.isInsideChunk(surface)
+                || !context.containsY(surface.getY())
+                || context.world.canSeeSky(surface)
+                || !context.world.getBlockState(surface).isSideSolid(context.world, surface, outward)
+                || !isLushBiomePatchNoise(context, surface)) {
+            return null;
+        }
+
+        return surface;
+    }
+
+    private void placeMossPatch(CaveDensityContext context, Random random, BlockPos originSurface, boolean ceiling) {
+        int xRadius = 1 + LUSH_MOSS_PATCH_RADIUS_MIN + random.nextInt(LUSH_MOSS_PATCH_RADIUS_MAX - LUSH_MOSS_PATCH_RADIUS_MIN + 1);
+        int zRadius = 1 + LUSH_MOSS_PATCH_RADIUS_MIN + random.nextInt(LUSH_MOSS_PATCH_RADIUS_MAX - LUSH_MOSS_PATCH_RADIUS_MIN + 1);
+        int baseDepth = ceiling ? LUSH_CEILING_MOSS_PATCH_DEPTH_MIN + random.nextInt(LUSH_CEILING_MOSS_PATCH_DEPTH_MAX - LUSH_CEILING_MOSS_PATCH_DEPTH_MIN + 1) : LUSH_MOSS_PATCH_DEPTH;
+
+        for (int dx = -xRadius; dx <= xRadius; dx++) {
+            boolean xEdge = dx == -xRadius || dx == xRadius;
+
+            for (int dz = -zRadius; dz <= zRadius; dz++) {
+                boolean zEdge = dz == -zRadius || dz == zRadius;
+                boolean corner = xEdge && zEdge;
+                boolean edge = xEdge || zEdge;
+
+                if (corner || edge && random.nextFloat() > LUSH_MOSS_PATCH_EDGE_CHANCE) {
+                    continue;
+                }
+
+                BlockPos surface = findLushSurface(context, originSurface.add(dx, 0, dz), ceiling ? EnumFacing.UP : EnumFacing.DOWN, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+
+                if (surface == null) {
+                    continue;
+                }
+
+                if (!placeMossGround(context.world, surface, baseDepth, ceiling)) {
+                    continue;
+                }
+
+                if (ceiling) {
+                    if (random.nextFloat() < LUSH_CEILING_MOSS_PATCH_VINE_CHANCE) {
+                        BlockPos below = surface.down();
+
+                        if (context.world.isAirBlock(below)) {
+                            placeCaveVineInMoss(context.world, random, below);
+                        }
+                    }
+                } else if (random.nextFloat() < LUSH_MOSS_PATCH_VEGETATION_CHANCE) {
+                    placeMossVegetation(context.world, random, surface.up());
+                }
+            }
+        }
+    }
+
+    private boolean placeMossGround(World world, BlockPos surface, int depth, boolean ceiling) {
+        boolean placedAny = false;
+        EnumFacing direction = ceiling ? EnumFacing.UP : EnumFacing.DOWN;
+
+        for (int i = 0; i < depth; i++) {
+            BlockPos groundPos = surface.offset(direction, i);
+
+            if (groundPos.getY() <= 0 || groundPos.getY() >= world.getActualHeight() - 1) {
+                break;
+            }
+
+            Block block = world.getBlockState(groundPos).getBlock();
+
+            if (block == ModBlocks.MOSS_BLOCK) {
+                placedAny = true;
+                continue;
+            }
+
+            if (!isMossReplaceable(block)) {
+                return placedAny;
+            }
+
+            world.setBlockState(groundPos, ModBlocks.MOSS_BLOCK.getDefaultState(), 2);
+            placedAny = true;
+        }
+
+        return placedAny;
+    }
+
+    private void placeMossVegetation(World world, Random random, BlockPos pos) {
+        if (!world.isAirBlock(pos)) {
+            return;
+        }
+
+        int roll = random.nextInt(96);
+
+        if (roll < 50) {
+            IBlockState grass = Blocks.TALLGRASS.getDefaultState().withProperty(BlockTallGrass.TYPE, BlockTallGrass.EnumType.GRASS);
+
+            if (Blocks.TALLGRASS.canBlockStay(world, pos, grass)) {
+                world.setBlockState(pos, grass, 2);
+            }
+        } else if (roll < 75) {
+            world.setBlockState(pos, ModBlocks.MOSS_CARPET.getDefaultState(), 2);
+        } else if (roll < 85) {
+            IBlockState grass = Blocks.TALLGRASS.getDefaultState().withProperty(BlockTallGrass.TYPE, BlockTallGrass.EnumType.GRASS);
+
+            if (Blocks.TALLGRASS.canBlockStay(world, pos, grass)) {
+                Blocks.DOUBLE_PLANT.placeAt(world, pos, BlockDoublePlant.EnumPlantType.GRASS, 2);
+            }
+        } else if (roll < 92 && ModBlocks.Azalea.canPlaceBlockAt(world, pos)) {
+            world.setBlockState(pos, ModBlocks.Azalea.getDefaultState(), 2);
+        } else if (ModBlocks.Flowering_Azalea.canPlaceBlockAt(world, pos)) {
+            world.setBlockState(pos, ModBlocks.Flowering_Azalea.getDefaultState(), 2);
+        }
+    }
+
+    private void placeCaveVineInMoss(World world, Random random, BlockPos start) {
+        int length = random.nextInt(6) == 0 ? 1 + random.nextInt(7) : random.nextInt(4);
+
+        if (length <= 0) {
+            return;
+        }
+
+        placeCaveVine(world, random, start, length);
+    }
+
+    private BlockPos findLushWaterSpawnPos(CaveDensityContext context, Random random, BlockPos center, int radius) {
+        for (int attempt = 0; attempt < 24; attempt++) {
+            BlockPos pos = center.add(random.nextInt(radius * 2 + 1) - radius, random.nextInt(7) - 3, random.nextInt(radius * 2 + 1) - radius);
+
+            if (!context.isInsideChunk(pos) || !context.containsY(pos.getY()) || !context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH) || !isLushRegionColumn(context, pos.getX(), pos.getZ())) {
+                continue;
+            }
+
+            if (canSpawnAxolotlInLushWater(context.world, pos, context.blockX, context.blockZ)) {
+                return pos;
+            }
+        }
+
+        return null;
+    }
+
+    private void maybeSpawnAxolotlGroupNearClayPool(CaveDensityContext context, Random random, BlockPos center) {
+        if (random.nextInt(LUSH_AXOLOTL_CLAY_POOL_CHANCE) != 0) {
+            return;
+        }
+
+        BlockPos water = findLushWaterSpawnPos(context, random, center, LUSH_DRIPLEAF_PATCH_RADIUS_MAX + 2);
+
+        if (water != null) {
+            int count = LUSH_AXOLOTL_MIN_GROUP_SIZE + random.nextInt(LUSH_AXOLOTL_MAX_GROUP_SIZE - LUSH_AXOLOTL_MIN_GROUP_SIZE + 1);
+            spawnAxolotlGroup(context.world, random, water, count, context.blockX, context.blockZ);
+        }
+    }
+
+    private void spawnAxolotlGroup(World world, Random random, BlockPos origin, int count, int blockX, int blockZ) {
+        AxisAlignedBB checkBox = new AxisAlignedBB(blockX, origin.getY() - 12, blockZ, blockX + CHUNK_SIZE, origin.getY() + 12, blockZ + CHUNK_SIZE);
+        List<EntityAxolotl> existing = world.getEntitiesWithinAABB(EntityAxolotl.class, checkBox);
+
+        if (!existing.isEmpty()) {
+            return;
+        }
+
+        int spawned = 0;
+
+        for (int attempt = 0; attempt < count * 8 && spawned < count; attempt++) {
+            BlockPos pos = origin.add(random.nextInt(9) - 4, random.nextInt(5) - 2, random.nextInt(9) - 4);
+
+            if (!canSpawnAxolotlInLushWater(world, pos, blockX, blockZ)) {
+                continue;
+            }
+
+            EntityAxolotl axolotl = new EntityAxolotl(world);
+            axolotl.setLocationAndAngles(pos.getX() + 0.5D, pos.getY() + 0.2D, pos.getZ() + 0.5D, random.nextFloat() * 360.0F, 0.0F);
+            axolotl.onInitialSpawn(world.getDifficultyForLocation(pos), (IEntityLivingData)null);
+            world.spawnEntity(axolotl);
+            spawned++;
+        }
+    }
+
+    private boolean canSpawnAxolotlInLushWater(World world, BlockPos pos, int blockX, int blockZ) {
+        return isInsideChunk(pos, blockX, blockZ)
+                && !world.canSeeSky(pos)
+                && world.getBlockState(pos).getMaterial() == Material.WATER
+                && world.getBlockState(pos.down()).getBlock() == Blocks.CLAY;
     }
 
     private boolean hasDripstoneRegionInChunk(CaveDensityContext context) {
@@ -869,10 +1157,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (random.nextInt(100) < LUSH_CLAY_DRIPLEAF_PATCH_CHANCE && tryPlaceClayPatchWithDripleaves(world, random, pos, blockX, blockZ)) {
-            return;
-        }
-
         int groundRoll = random.nextInt(100);
 
         if (groundRoll < 62) {
@@ -1160,8 +1444,25 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private void placeCaveVine(World world, Random random, BlockPos start) {
-        int length = 2 + random.nextInt(8);
+        int roll = random.nextInt(15);
+        int length;
 
+        if (roll < 2) {
+            length = random.nextInt(20);
+        } else if (roll < 5) {
+            length = random.nextInt(3);
+        } else {
+            length = random.nextInt(7);
+        }
+
+        if (length <= 0) {
+            return;
+        }
+
+        placeCaveVine(world, random, start, length);
+    }
+
+    private void placeCaveVine(World world, Random random, BlockPos start, int length) {
         for (int i = 0; i < length; i++) {
             BlockPos pos = start.down(i);
 
@@ -1394,6 +1695,18 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
     private boolean isLushReplaceable(Block block) {
         return block == Blocks.STONE || block == Blocks.DIRT || block == Blocks.GRASS || block == Blocks.GRAVEL || block == Blocks.CLAY || block == ModBlocks.DeepSlate || block == ModBlocks.ROOTED_DIRT || block == ModBlocks.MOSS_BLOCK;
+    }
+
+    private boolean isMossReplaceable(Block block) {
+        return block == Blocks.STONE
+                || block == Blocks.DIRT
+                || block == Blocks.GRASS
+                || block == Blocks.MYCELIUM
+                || block == ModBlocks.DeepSlate
+                || block == ModBlocks.ROOTED_DIRT
+                || block == ModBlocks.MOSS_BLOCK
+                || block == ModBlocks.CAVE_VINE
+                || block == ModBlocks.CAVE_VINE_PLANT;
     }
 
     private boolean isNaturalCaveBlock(Block block) {
