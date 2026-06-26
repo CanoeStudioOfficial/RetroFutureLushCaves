@@ -23,10 +23,8 @@ import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.IChunkGenerator;
-import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fml.common.IWorldGenerator;
 
@@ -36,10 +34,6 @@ import java.util.Random;
 
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int CHUNK_SIZE = 16;
-    private static final int AZALEA_TREE_CHANCE = 18;
-    private static final int HUMID_AZALEA_TREE_CHANCE = 6;
-    private static final int WET_AZALEA_TREE_CHANCE = 9;
-    private static final int AZALEA_TREE_MIN_SPACING = 24;
     private static final int LUSH_CAVE_MIN_Y = 8;
     private static final int LUSH_CAVE_MAX_Y = 62;
     private static final int DRIPSTONE_CAVE_MIN_Y = 8;
@@ -62,16 +56,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     private static final int LUSH_CLAY_POOL_VERTICAL_RANGE = 5;
     private static final float LUSH_CLAY_PATCH_VEGETATION_CHANCE = 0.05F;
     private static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
-    private static final double CAVE_CLIMATE_SCALE = 0.006D;
-    private static final double CAVE_CLIMATE_DETAIL_SCALE = 0.028D;
-    private static final double LUSH_CAVE_HUMIDITY_MIN = 0.72D;
-    private static final double DRIPSTONE_CAVE_CONTINENTALNESS_MIN = 0.82D;
-    private static final double LUSH_REGION_SCALE = 0.012D;
-    private static final double LUSH_REGION_THRESHOLD = 0.32D;
-    private static final double DRIPSTONE_REGION_SCALE = 0.011D;
-    private static final double DRIPSTONE_REGION_THRESHOLD = 0.3D;
-    private static final double CAVE_REGION_TYPE_MARGIN = 0.06D;
-    private static final double LUSH_SURFACE_HUMIDITY_BONUS = 0.05D;
+    private static final double LUSH_REGION_SCALE = 0.01D;
+    private static final double LUSH_REGION_THRESHOLD = -0.04D;
+    private static final double DRIPSTONE_REGION_SCALE = 0.01D;
+    private static final double DRIPSTONE_REGION_THRESHOLD = -0.02D;
+    private static final double CAVE_REGION_TYPE_MARGIN = 0.035D;
     private static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     private static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
     private static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
@@ -160,11 +149,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private static final class CaveBiomeNoise {
-        private final MojangNormalNoise caveHumidity;
-        private final MojangNormalNoise caveContinentalness;
-        private final MojangNormalNoise caveErosion;
-        private final MojangNormalNoise caveWeirdness;
-        private final MojangNormalNoise caveClimateDetail;
         private final MojangNormalNoise lushRegion;
         private final MojangNormalNoise lushDetail;
         private final MojangNormalNoise lushPatch;
@@ -174,11 +158,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         private final MojangNormalNoise dripstoneRidge;
 
         private CaveBiomeNoise(long seed) {
-            this.caveHumidity = MojangNormalNoise.create(seed, "retro_cave_humidity", -8, 1.0D);
-            this.caveContinentalness = MojangNormalNoise.create(seed, "retro_cave_continentalness", -8, 1.0D);
-            this.caveErosion = MojangNormalNoise.create(seed, "retro_cave_erosion", -8, 1.0D);
-            this.caveWeirdness = MojangNormalNoise.create(seed, "retro_cave_weirdness", -8, 1.0D);
-            this.caveClimateDetail = MojangNormalNoise.create(seed, "retro_cave_climate_detail", -7, 1.0D);
             this.lushRegion = MojangNormalNoise.create(seed, "retro_lush_caves_region", -8, 1.0D);
             this.lushDetail = MojangNormalNoise.create(seed, "retro_lush_caves_detail", -7, 1.0D);
             this.lushPatch = MojangNormalNoise.create(seed, "retro_lush_caves_patch", -7, 1.0D);
@@ -326,81 +305,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
     }
 
-    private int getAzaleaTreeChanceForChunk(World world, int blockX, int blockZ) {
-        Biome biome = world.getBiome(new BlockPos(blockX + CHUNK_SIZE / 2, 0, blockZ + CHUNK_SIZE / 2));
-
-        if (isHumidLushSurfaceBiome(biome)) {
-            return HUMID_AZALEA_TREE_CHANCE;
-        }
-
-        if (isWetLushSurfaceBiome(biome)) {
-            return WET_AZALEA_TREE_CHANCE;
-        }
-
-        return AZALEA_TREE_CHANCE;
-    }
-
-    private boolean isHumidLushSurfaceBiome(Biome biome) {
-        String biomeName = String.valueOf(biome.getRegistryName());
-
-        return BiomeDictionary.hasType(biome, BiomeDictionary.Type.JUNGLE)
-                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP)
-                || biomeName.contains("jungle")
-                || biomeName.contains("roofed_forest")
-                || biomeName.contains("dark_forest")
-                || (BiomeDictionary.hasType(biome, BiomeDictionary.Type.FOREST) && BiomeDictionary.hasType(biome, BiomeDictionary.Type.DENSE) && biome.getRainfall() >= 0.6F);
-    }
-
-    private boolean isWetLushSurfaceBiome(Biome biome) {
-        return biome.getRainfall() >= 0.8F
-                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.WET)
-                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.LUSH);
-    }
-
-    private BlockPos findSurfaceAzaleaTreePos(CaveDensityContext context, Random random) {
-        for (int attempt = 0; attempt < 10; attempt++) {
-            BlockPos start = context.world.getHeight(new BlockPos(context.blockX + random.nextInt(CHUNK_SIZE), 0, context.blockZ + random.nextInt(CHUNK_SIZE)));
-
-            if (start.getY() >= 50 && start.getY() <= context.world.getActualHeight() - 16 && isLushRegionColumn(context, start.getX(), start.getZ())) {
-                return start;
-            }
-        }
-
-        return null;
-    }
-
-    private boolean generateSurfaceAzaleaTree(World world, Random random, BlockPos start) {
-        return new WorldGenBigAzaleaTree(true).generate(world, random, start);
-    }
-
-    private boolean hasNearbyAzaleaTree(World world, BlockPos center, int radius) {
-        int minY = Math.max(1, center.getY() - 6);
-        int maxY = Math.min(world.getActualHeight() - 1, center.getY() + 16);
-        int radiusSq = radius * radius;
-
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                if (dx * dx + dz * dz > radiusSq) {
-                    continue;
-                }
-
-                for (int y = minY; y <= maxY; y++) {
-                    Block block = world.getBlockState(new BlockPos(center.getX() + dx, y, center.getZ() + dz)).getBlock();
-
-                    if (isAzaleaTreeBlock(block)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private boolean isAzaleaTreeBlock(Block block) {
-        return block == ModBlocks.Azalea_Leaves || block == ModBlocks.Flowering_Azalea_Leaves || block == ModBlocks.Azalea || block == ModBlocks.Flowering_Azalea;
-    }
-
     private void generateNoiseLushRegions(CaveDensityContext context) {
         if (!isLushRegionChunk(context)) {
             return;
@@ -495,10 +399,9 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double region = context.biomeNoise.lushRegion.getValue(pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 0.065D, pos.getY() * 0.085D, pos.getZ() * 0.065D);
         double caveAffinity = context.caveAffinity(pos);
-        double surfaceInfluence = getLushSurfaceInfluence(context.world, pos.getX(), pos.getZ());
 
         return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.LUSH
-                && region * 0.48D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.3D + surfaceInfluence * 0.08D > 0.06D;
+                && region * 0.48D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.3D > -0.02D;
     }
 
     private boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -508,7 +411,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double caveAffinity = context.caveAffinity(pos);
 
         return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.DRIPSTONE
-                && region * 0.38D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.26D > 0.18D;
+                && region * 0.38D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.26D > 0.08D;
     }
 
     private BlockPos findDripstoneClusterOrigin(CaveDensityContext context, Random random, int minY, int maxY) {
@@ -1390,73 +1293,39 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private CaveRegionType computeCaveRegionType(CaveDensityContext context, int x, int z) {
-        if (!hasBetterCavesDensityOpening(context, x, z, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y)
-                && !hasBetterCavesDensityOpening(context, x, z, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y)) {
+        boolean hasLushOpening = hasBetterCavesDensityOpening(context, x, z, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y);
+        boolean hasDripstoneOpening = hasBetterCavesDensityOpening(context, x, z, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y);
+
+        if (!hasLushOpening && !hasDripstoneOpening) {
             return CaveRegionType.NONE;
         }
 
-        double humidity = getCaveHumidity(context, x, z);
-        double continentalness = getCaveContinentalness(context, x, z);
         double lushScore = getLushRegionScore(context, x, z);
         double dripstoneScore = getDripstoneRegionScore(context, x, z);
-        boolean lushClimate = humidity >= LUSH_CAVE_HUMIDITY_MIN;
-        boolean dripstoneClimate = continentalness >= DRIPSTONE_CAVE_CONTINENTALNESS_MIN;
+        boolean canLush = hasLushOpening && lushScore >= LUSH_REGION_THRESHOLD;
+        boolean canDripstone = hasDripstoneOpening && dripstoneScore >= DRIPSTONE_REGION_THRESHOLD;
 
-        if (dripstoneClimate && dripstoneScore >= DRIPSTONE_REGION_THRESHOLD && (!lushClimate || dripstoneScore >= lushScore + CAVE_REGION_TYPE_MARGIN)) {
+        if (canDripstone && (!canLush || dripstoneScore >= lushScore + CAVE_REGION_TYPE_MARGIN)) {
             return CaveRegionType.DRIPSTONE;
         }
 
-        if (lushClimate && lushScore >= LUSH_REGION_THRESHOLD && (!dripstoneClimate || lushScore > dripstoneScore + CAVE_REGION_TYPE_MARGIN)) {
+        if (canLush) {
             return CaveRegionType.LUSH;
         }
 
         return CaveRegionType.NONE;
     }
 
-    private double getCaveHumidity(CaveDensityContext context, int x, int z) {
-        double humidity = context.biomeNoise.caveHumidity.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
-        double detail = context.biomeNoise.caveClimateDetail.getValue(x * CAVE_CLIMATE_DETAIL_SCALE, 0.0D, z * CAVE_CLIMATE_DETAIL_SCALE);
-        return humidity * 0.78D + detail * 0.12D + getLushSurfaceInfluence(context.world, x, z) * LUSH_SURFACE_HUMIDITY_BONUS;
-    }
-
-    private double getCaveContinentalness(CaveDensityContext context, int x, int z) {
-        double continentalness = context.biomeNoise.caveContinentalness.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
-        double erosion = context.biomeNoise.caveErosion.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
-        double weirdness = context.biomeNoise.caveWeirdness.getValue(x * CAVE_CLIMATE_SCALE, 0.0D, z * CAVE_CLIMATE_SCALE);
-        return continentalness * 0.74D + (1.0D - Math.abs(erosion)) * 0.18D + Math.max(0.0D, weirdness) * 0.08D;
-    }
-
     private double getLushRegionScore(CaveDensityContext context, int x, int z) {
         double region = context.biomeNoise.lushRegion.getValue(x * LUSH_REGION_SCALE, 0.0D, z * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushDetail.getValue(x * 0.036D, 0.0D, z * 0.036D);
-        double surfaceInfluence = getLushSurfaceInfluence(context.world, x, z);
-        return region * 0.72D + detail * 0.22D + surfaceInfluence * 0.08D;
+        return region * 0.74D + detail * 0.26D;
     }
 
     private double getDripstoneRegionScore(CaveDensityContext context, int x, int z) {
         double region = context.biomeNoise.dripstoneRegion.getValue(x * DRIPSTONE_REGION_SCALE, 0.0D, z * DRIPSTONE_REGION_SCALE);
         double detail = context.biomeNoise.dripstoneDetail.getValue(x * 0.033D, 0.0D, z * 0.033D);
         return region * 0.72D + detail * 0.28D;
-    }
-
-    private double getLushSurfaceInfluence(World world, int x, int z) {
-        double influence = 0.0D;
-        int samples = 0;
-
-        for (int dx = -16; dx <= 16; dx += 8) {
-            for (int dz = -16; dz <= 16; dz += 8) {
-                Biome biome = world.getBiome(new BlockPos(x + dx, 64, z + dz));
-                samples++;
-
-                if (isHumidLushSurfaceBiome(biome)) {
-                    influence += 1.0D;
-                } else if (isWetLushSurfaceBiome(biome)) {
-                    influence += 0.65D;
-                }
-            }
-        }
-
-        return samples == 0 ? 0.0D : influence / samples;
     }
 
     private boolean hasBetterCavesDensityOpening(CaveDensityContext context, int x, int z, int minY, int maxY) {
