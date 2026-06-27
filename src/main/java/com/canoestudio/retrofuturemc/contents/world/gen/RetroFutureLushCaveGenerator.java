@@ -398,7 +398,7 @@ final class RetroFutureLushCaveGenerator {
 
                 BlockPos openPos = surfaceFloor.up();
 
-                if (!waterloggedPatch && !world.isAirBlock(openPos)) {
+                if (!manager.isAirOrWater(world, openPos) || !waterloggedPatch && !world.isAirBlock(openPos)) {
                     continue;
                 }
 
@@ -420,14 +420,20 @@ final class RetroFutureLushCaveGenerator {
                 continue;
             }
 
+            BlockPos plantPos = surfaceFloor.up();
+
             if (waterloggedPatch) {
-                world.setBlockState(surfaceFloor, Blocks.WATER.getDefaultState(), 2);
+                if (!manager.isAirOrWater(world, plantPos)) {
+                    continue;
+                }
+
+                world.setBlockState(plantPos, Blocks.WATER.getDefaultState(), 2);
 
                 if (random.nextFloat() < vegetationChance) {
-                    placeDripleafFeature(manager, world, random, surfaceFloor, blockX, blockZ);
+                    placeDripleafFeature(manager, world, random, plantPos, blockX, blockZ);
                 }
             } else if (random.nextFloat() < vegetationChance) {
-                placeDripleafFeature(manager, world, random, surfaceFloor.up(), blockX, blockZ);
+                placeDripleafFeature(manager, world, random, plantPos, blockX, blockZ);
             }
         }
 
