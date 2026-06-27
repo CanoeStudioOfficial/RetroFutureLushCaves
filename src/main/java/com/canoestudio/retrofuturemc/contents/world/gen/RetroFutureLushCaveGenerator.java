@@ -158,7 +158,19 @@ final class RetroFutureLushCaveGenerator {
     }
 
     private BlockPos randomLushFeatureStart(RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
-        return new BlockPos(context.blockX + random.nextInt(CHUNK_SIZE), minY + random.nextInt(Math.max(1, maxY - minY + 1)), context.blockZ + random.nextInt(CHUNK_SIZE));
+        int x = context.blockX + random.nextInt(CHUNK_SIZE);
+        int z = context.blockZ + random.nextInt(CHUNK_SIZE);
+
+        for (int attempt = 0; attempt < 6; attempt++) {
+            int y = minY + random.nextInt(Math.max(1, maxY - minY + 1));
+            BlockPos pos = new BlockPos(x, y, z);
+
+            if (context.world.isAirBlock(pos) && !context.world.canSeeSky(pos) && context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)) {
+                return pos;
+            }
+        }
+
+        return new BlockPos(x, minY + random.nextInt(Math.max(1, maxY - minY + 1)), z);
     }
 
     private BlockPos findLushSurface(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos start, EnumFacing direction, int maxSteps) {
