@@ -36,11 +36,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final int DRIPSTONE_LARGE_FEATURE_CHANCE = 24;
     static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 180;
     static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 72;
-    static final int LUSH_MOSS_PATCH_ATTEMPTS = 24;
-    static final int LUSH_CEILING_MOSS_PATCH_ATTEMPTS = 18;
-    static final int LUSH_CLAY_PATCH_ATTEMPTS = 58;
-    static final int LUSH_CAVE_VINE_ATTEMPTS = 40;
-    static final int LUSH_SPORE_BLOSSOM_ATTEMPTS = 18;
+    static final int LUSH_MOSS_PATCH_ATTEMPTS = 54;
+    static final int LUSH_CEILING_MOSS_PATCH_ATTEMPTS = 42;
+    static final int LUSH_CLAY_PATCH_ATTEMPTS = 76;
+    static final int LUSH_CAVE_VINE_ATTEMPTS = 72;
+    static final int LUSH_SPORE_BLOSSOM_ATTEMPTS = 26;
     static final int LUSH_AXOLOTL_GROUP_CHANCE = 5;
     static final int LUSH_AXOLOTL_CLAY_POOL_CHANCE = 8;
     static final int LUSH_AXOLOTL_MIN_GROUP_SIZE = 4;
@@ -50,7 +50,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final int LUSH_MOSS_PATCH_DEPTH = 1;
     static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MIN = 1;
     static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MAX = 2;
-    static final int LUSH_MOSS_PATCH_VERTICAL_RANGE = 5;
+    static final int LUSH_MOSS_PATCH_VERTICAL_RANGE = 20;
     static final float LUSH_MOSS_PATCH_EDGE_CHANCE = 0.3F;
     static final float LUSH_MOSS_PATCH_VEGETATION_CHANCE = 0.72F;
     static final float LUSH_CEILING_MOSS_PATCH_VINE_CHANCE = 0.08F;
@@ -64,12 +64,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final float LUSH_CLAY_PATCH_VEGETATION_CHANCE = 0.05F;
     static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
     static final double CAVE_TYPE_SELECTOR_SCALE = 0.006D;
-    static final double LUSH_TYPE_SELECTOR_MAX = -0.14D;
-    static final double DRIPSTONE_TYPE_SELECTOR_MIN = 0.14D;
+    static final double LUSH_TYPE_SELECTOR_MAX = -0.03D;
+    static final double DRIPSTONE_TYPE_SELECTOR_MIN = 0.03D;
     static final double LUSH_REGION_SCALE = 0.01D;
-    static final double LUSH_REGION_THRESHOLD = 0.12D;
+    static final double LUSH_REGION_THRESHOLD = -0.12D;
     static final double DRIPSTONE_REGION_SCALE = 0.01D;
-    static final double DRIPSTONE_REGION_THRESHOLD = 0.12D;
+    static final double DRIPSTONE_REGION_THRESHOLD = -0.1D;
     static final double CAVE_REGION_TYPE_MARGIN = 0.12D;
     static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
     static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
@@ -118,10 +118,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
     private CaveDensityContext createCaveDensityContext(World world, int blockX, int blockZ) {
         BetterCavesConfig betterCavesConfig = getBetterCavesConfig(world);
-
-        if (!betterCavesConfig.isMojang118StyleCavesEnabled()) {
-            return null;
-        }
 
         return new CaveDensityContext(world, blockX, blockZ, betterCavesConfig, getDensitySampler(world, betterCavesConfig));
     }
@@ -326,7 +322,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double caveAffinity = context.caveAffinity(pos);
 
         return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.LUSH
-                && region * 0.48D + detail * 0.22D + vertical * 0.16D + caveAffinity * 0.3D > -0.02D;
+                && region * 0.36D + detail * 0.2D + vertical * 0.2D + caveAffinity * 0.24D > -0.28D;
     }
 
     boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -336,7 +332,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double caveAffinity = context.caveAffinity(pos);
 
         return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.DRIPSTONE
-                && region * 0.38D + detail * 0.18D + ridged * 0.26D + caveAffinity * 0.26D > 0.08D;
+                && region * 0.32D + detail * 0.16D + ridged * 0.26D + caveAffinity * 0.22D > -0.08D;
     }
 
     boolean isAirOrWater(World world, BlockPos pos) {
@@ -419,6 +415,14 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return CaveRegionType.DRIPSTONE;
         }
 
+        if (lushColumns > 0 && dripstoneColumns == 0) {
+            return CaveRegionType.LUSH;
+        }
+
+        if (dripstoneColumns > 0 && lushColumns == 0) {
+            return CaveRegionType.DRIPSTONE;
+        }
+
         return CaveRegionType.NONE;
     }
 
@@ -440,17 +444,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     private CaveRegionType computeCaveRegionType(CaveDensityContext context, int x, int z) {
-        boolean hasLushOpening = hasBetterCavesDensityOpening(context, x, z, LUSH_CAVE_MIN_Y, LUSH_CAVE_MAX_Y);
-        boolean hasDripstoneOpening = hasBetterCavesDensityOpening(context, x, z, DRIPSTONE_CAVE_MIN_Y, DRIPSTONE_CAVE_MAX_Y);
-
-        if (!hasLushOpening && !hasDripstoneOpening) {
-            return CaveRegionType.NONE;
-        }
-
         double lushScore = getLushRegionScore(context, x, z);
         double dripstoneScore = getDripstoneRegionScore(context, x, z);
-        boolean canLush = hasLushOpening && lushScore >= LUSH_REGION_THRESHOLD;
-        boolean canDripstone = hasDripstoneOpening && dripstoneScore >= DRIPSTONE_REGION_THRESHOLD;
+        boolean canLush = lushScore >= LUSH_REGION_THRESHOLD;
+        boolean canDripstone = dripstoneScore >= DRIPSTONE_REGION_THRESHOLD;
 
         if (!canLush && !canDripstone) {
             return CaveRegionType.NONE;
@@ -487,19 +484,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double region = context.biomeNoise.dripstoneRegion.getValue(x * DRIPSTONE_REGION_SCALE, 0.0D, z * DRIPSTONE_REGION_SCALE);
         double detail = context.biomeNoise.dripstoneDetail.getValue(x * 0.033D, 0.0D, z * 0.033D);
         return region * 0.72D + detail * 0.28D;
-    }
-
-    private boolean hasBetterCavesDensityOpening(CaveDensityContext context, int x, int z, int minY, int maxY) {
-        minY = Math.max(minY, context.bottomY);
-        maxY = Math.min(maxY, context.topY);
-
-        for (int y = minY; y <= maxY; y += 8) {
-            if (context.isLikelyOpen(new BlockPos(x, y, z), DENSITY_COLUMN_OPEN_MARGIN)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     Random createFeatureRandom(World world, long salt, int cellX, int cellZ) {

@@ -187,8 +187,7 @@ final class RetroFutureLushCaveGenerator {
                 || !context.containsY(scan.getY())
                 || !context.world.isAirBlock(scan)
                 || !context.isDeepEnough(scan, LUSH_MIN_SURFACE_DEPTH)
-                || context.world.canSeeSky(scan)
-                || !context.isUndergroundOpenSpace(scan, LUSH_MIN_SURFACE_DEPTH, DENSITY_DECORATION_OPEN_MARGIN)) {
+                || context.world.canSeeSky(scan)) {
             return null;
         }
 
@@ -197,8 +196,7 @@ final class RetroFutureLushCaveGenerator {
         if (!context.isInsideChunk(surface)
                 || !context.containsY(surface.getY())
                 || context.world.canSeeSky(surface)
-                || !context.world.getBlockState(surface).isSideSolid(context.world, surface, outward)
-                || manager != null && !manager.isLushBiomePatchNoise(context, surface)) {
+                || !context.world.getBlockState(surface).isSideSolid(context.world, surface, outward)) {
             return null;
         }
 

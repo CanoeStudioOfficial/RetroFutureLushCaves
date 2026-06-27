@@ -60,11 +60,9 @@ final class RetroFutureDripstoneCaveGenerator {
                     minY + random.nextInt(Math.max(1, maxY - minY + 1)),
                     context.blockZ + random.nextInt(CHUNK_SIZE));
 
-            if (!manager.isAirOrWater(context.world, pos) || !context.isUndergroundOpenSpace(pos, DRIPSTONE_MIN_SURFACE_DEPTH, DENSITY_COLUMN_OPEN_MARGIN)) {
-                continue;
-            }
+            pos = findNearbyCaveAir(manager, context, pos, 14);
 
-            if (!manager.isDripstoneBiomePatchNoise(context, pos)) {
+            if (pos == null || !manager.isDripstoneBiomePatchNoise(context, pos)) {
                 continue;
             }
 
@@ -74,6 +72,36 @@ final class RetroFutureDripstoneCaveGenerator {
         }
 
         return null;
+    }
+
+    private BlockPos findNearbyCaveAir(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos start, int range) {
+        if (isUsableCaveAir(manager, context, start)) {
+            return start;
+        }
+
+        for (int dy = 1; dy <= range; dy++) {
+            BlockPos down = start.down(dy);
+
+            if (isUsableCaveAir(manager, context, down)) {
+                return down;
+            }
+
+            BlockPos up = start.up(dy);
+
+            if (isUsableCaveAir(manager, context, up)) {
+                return up;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isUsableCaveAir(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos pos) {
+        return context.isInsideChunk(pos)
+                && context.containsY(pos.getY())
+                && manager.isAirOrWater(context.world, pos)
+                && !context.world.canSeeSky(pos)
+                && context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH);
     }
 
     private void placeDripstoneCluster(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, BlockPos origin, int[] budget) {
@@ -97,7 +125,7 @@ final class RetroFutureDripstoneCaveGenerator {
 
                 BlockPos columnOrigin = origin.add(dx, 0, dz);
 
-                if (!context.isInsideChunk(columnOrigin) || !context.isDeepEnough(columnOrigin, DRIPSTONE_MIN_SURFACE_DEPTH) || !manager.isDripstoneBiomePatchNoise(context, columnOrigin)) {
+                if (!context.isInsideChunk(columnOrigin) || !context.isDeepEnough(columnOrigin, DRIPSTONE_MIN_SURFACE_DEPTH)) {
                     continue;
                 }
 
