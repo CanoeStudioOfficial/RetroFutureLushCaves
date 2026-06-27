@@ -28,7 +28,6 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
-import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
 
@@ -67,7 +66,7 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
             if (!this.canBlockStay(worldIn, pos, state))
             {
                 this.dropBlockAsItem(worldIn, pos, state, 0);
-                worldIn.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
+                restoreContainedFluidOrAir(worldIn, pos, state, 3);
             }
             else if (!hasDripleafAbove(worldIn, pos))
             {
@@ -85,6 +84,7 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
     public void neighborChanged(IBlockState state, World worldIn, BlockPos pos, Block blockIn, BlockPos fromPos)
     {
         super.neighborChanged(state, worldIn, pos, blockIn, fromPos);
+        scheduleContainedFluidTick(worldIn, pos, state);
         if (!worldIn.isRemote)
         {
             worldIn.scheduleUpdate(pos, this, 1);
@@ -156,40 +156,28 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
 
     @Override
     public boolean isFluidloggable(@Nonnull IBlockState state, @Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull FluidState fluidState) {
-        if (fluidState.isEmpty()) return true;
-        return isFluidValid(state, IWorldProvider.getWorld(world), pos, fluidState.getFluid())
-                && (fluidState.isSource() || fluidState.getActualHeight(world, pos) >= 1 && FluidloggedUtils.canCreateSource(fluidState.getState(), IWorldProvider.getWorld(world), pos));
+        return fluidState.isEmpty() || fluidState.isFluidloggable() && isFluidValid(state, IWorldProvider.getWorld(world), pos, fluidState.getFluid());
     }
 
     @Nonnull
     @Override
     public EnumActionResult onFluidFill(@Nonnull World world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull FluidState newFluid, int blockFlags) {
-        if (!newFluid.isSource()) {
-            if (newFluid.getActualHeight(world, pos) < 1) {
-                world.playEvent(Constants.WorldEvents.BREAK_BLOCK_EFFECTS, pos, getStateId(here));
-                dropBlockAsItem(world, pos, here, 0);
-                world.setBlockState(pos, newFluid.getState(), blockFlags);
-                return EnumActionResult.SUCCESS;
-            }
-            else if (FluidloggedUtils.canCreateSource(newFluid.getState(), world, pos)
-                    && FluidloggedUtils.setFluidState(world, pos, here, newFluid.toSource(), false)) {
-                return EnumActionResult.SUCCESS;
-            }
-        }
         return EnumActionResult.PASS;
     }
 
     @Nonnull
     @Override
     public EnumActionResult onFluidDrain(@Nonnull World world, @Nonnull BlockPos pos, @Nonnull IBlockState here, int blockFlags) {
-        world.playEvent(Constants.WorldEvents.BREAK_BLOCK_EFFECTS, pos, getStateId(here));
-        dropBlockAsItem(world, pos, here, 0);
-        world.setBlockState(pos, Blocks.AIR.getDefaultState(), blockFlags);
-        return EnumActionResult.SUCCESS;
+        return EnumActionResult.PASS;
     }
 
     @Override
     public boolean canFluidFlow(@Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull EnumFacing side) {
+        return true;
+    }
+
+    @Override
+    public boolean canFluidConnect(@Nonnull IBlockAccess world, @Nonnull BlockPos pos, @Nonnull IBlockState here, @Nonnull EnumFacing side) {
         return true;
     }
 
@@ -232,10 +220,13 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
 
     private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags)
     {
-        if (hasWaterFluid(world, pos))
+        FluidState fluidState = getWaterFluidState(world, pos);
+
+        if (fluidState.getFluid() == FluidRegistry.WATER)
         {
             world.setBlockState(pos, newState, flags);
-            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), fluidState, false, flags);
+            world.scheduleUpdate(pos, fluidState.getState().getBlock(), fluidState.getState().getBlock().tickRate(world));
         }
         else
         {
@@ -245,8 +236,33 @@ public class DripleafStem extends BlockBush implements IGrowable, IFluidloggable
 
     private boolean hasWaterFluid(World world, BlockPos pos)
     {
+        return getWaterFluidState(world, pos).getFluid() == FluidRegistry.WATER;
+    }
+
+    private FluidState getWaterFluidState(World world, BlockPos pos)
+    {
         IBlockState state = world.getBlockState(pos);
-        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
+        return state.getMaterial() == Material.WATER ? FluidState.of(state) : FluidloggedUtils.getFluidState(world, pos, state);
+    }
+
+    private void restoreContainedFluidOrAir(World world, BlockPos pos, IBlockState state, int flags)
+    {
+        FluidState fluidState = FluidloggedUtils.getFluidState(world, pos, state);
+        world.setBlockState(pos, fluidState.getFluid() == FluidRegistry.WATER ? fluidState.getState() : Blocks.AIR.getDefaultState(), flags);
+        scheduleFluidTick(world, pos, fluidState);
+    }
+
+    private void scheduleContainedFluidTick(World world, BlockPos pos, IBlockState state)
+    {
+        scheduleFluidTick(world, pos, FluidloggedUtils.getFluidState(world, pos, state));
+    }
+
+    private void scheduleFluidTick(World world, BlockPos pos, FluidState fluidState)
+    {
+        if (fluidState.getFluid() == FluidRegistry.WATER)
+        {
+            world.scheduleUpdate(pos, fluidState.getState().getBlock(), fluidState.getState().getBlock().tickRate(world));
+        }
     }
 
     private BlockPos findTopPosition(World world, BlockPos pos)

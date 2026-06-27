@@ -408,25 +408,36 @@ public class PointedDripstoneBlock extends Block implements IFluidloggable {
     }
 
     private void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags) {
-        if (hasWaterFluid(world, pos)) {
+        FluidState fluidState = getWaterFluidState(world, pos);
+
+        if (fluidState.getFluid() == FluidRegistry.WATER) {
             world.setBlockState(pos, newState, flags);
-            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), fluidState, false, flags);
+            scheduleFluidTick(world, pos, fluidState);
         } else {
             world.setBlockState(pos, newState, flags);
         }
     }
 
     private void setBlockStateKeepingFluid(World world, BlockPos pos, int flags) {
-        if (hasWaterFluid(world, pos)) {
-            world.setBlockState(pos, Blocks.WATER.getDefaultState(), flags);
-        } else {
-            world.setBlockState(pos, Blocks.AIR.getDefaultState(), flags);
-        }
+        FluidState fluidState = FluidloggedUtils.getFluidState(world, pos, world.getBlockState(pos));
+        world.setBlockState(pos, fluidState.getFluid() == FluidRegistry.WATER ? fluidState.getState() : Blocks.AIR.getDefaultState(), flags);
+        scheduleFluidTick(world, pos, fluidState);
     }
 
     private boolean hasWaterFluid(World world, BlockPos pos) {
+        return getWaterFluidState(world, pos).getFluid() == FluidRegistry.WATER;
+    }
+
+    private FluidState getWaterFluidState(World world, BlockPos pos) {
         IBlockState state = world.getBlockState(pos);
-        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
+        return state.getMaterial() == Material.WATER ? FluidState.of(state) : FluidloggedUtils.getFluidState(world, pos, state);
+    }
+
+    private void scheduleFluidTick(World world, BlockPos pos, FluidState fluidState) {
+        if (fluidState.getFluid() == FluidRegistry.WATER) {
+            world.scheduleUpdate(pos, fluidState.getState().getBlock(), fluidState.getState().getBlock().tickRate(world));
+        }
     }
 
     @Override

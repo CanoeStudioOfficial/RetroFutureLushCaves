@@ -9,11 +9,17 @@ import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
+import net.minecraft.init.Biomes;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.IChunkProvider;
+import net.minecraft.world.gen.structure.MapGenStructureData;
+import net.minecraft.world.gen.structure.StructureBoundingBox;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fml.common.IWorldGenerator;
 
@@ -34,11 +40,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final int DRIPSTONE_LARGE_FEATURE_CHANCE = 24;
     static final int DRIPSTONE_MAX_BLOCKS_PER_CHUNK = 180;
     static final int DRIPSTONE_MAX_COLUMNS_PER_CHUNK = 72;
-    static final int LUSH_MOSS_PATCH_ATTEMPTS = 54;
-    static final int LUSH_CEILING_MOSS_PATCH_ATTEMPTS = 42;
-    static final int LUSH_CLAY_PATCH_ATTEMPTS = 76;
-    static final int LUSH_CAVE_VINE_ATTEMPTS = 72;
-    static final int LUSH_SPORE_BLOSSOM_ATTEMPTS = 26;
+    static final int LUSH_MOSS_PATCH_ATTEMPTS = 125;
+    static final int LUSH_CEILING_MOSS_PATCH_ATTEMPTS = 125;
+    static final int LUSH_CLAY_PATCH_ATTEMPTS = 62;
+    static final int LUSH_CAVE_VINE_ATTEMPTS = 188;
+    static final int LUSH_SPORE_BLOSSOM_ATTEMPTS = 25;
     static final int LUSH_AXOLOTL_GROUP_CHANCE = 5;
     static final int LUSH_AXOLOTL_CLAY_POOL_CHANCE = 8;
     static final int LUSH_AXOLOTL_MIN_GROUP_SIZE = 4;
@@ -48,9 +54,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final int LUSH_MOSS_PATCH_DEPTH = 1;
     static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MIN = 1;
     static final int LUSH_CEILING_MOSS_PATCH_DEPTH_MAX = 2;
-    static final int LUSH_MOSS_PATCH_VERTICAL_RANGE = 20;
+    static final int LUSH_MOSS_PLACEMENT_SCAN_RANGE = 12;
+    static final int LUSH_MOSS_PATCH_VERTICAL_RANGE = 5;
     static final float LUSH_MOSS_PATCH_EDGE_CHANCE = 0.3F;
-    static final float LUSH_MOSS_PATCH_VEGETATION_CHANCE = 0.72F;
+    static final float LUSH_MOSS_PATCH_VEGETATION_CHANCE = 0.8F;
     static final float LUSH_CEILING_MOSS_PATCH_VINE_CHANCE = 0.08F;
     static final int LUSH_DRIPLEAF_PATCH_RADIUS_MIN = 4;
     static final int LUSH_DRIPLEAF_PATCH_RADIUS_MAX = 7;
@@ -73,6 +80,8 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
     static final int NO_SURFACE = -1;
     static final EnumFacing[] DRIPLEAF_FEATURE_FACINGS = new EnumFacing[] {EnumFacing.EAST, EnumFacing.WEST, EnumFacing.SOUTH, EnumFacing.NORTH};
+    private static final int STRUCTURE_PROTECTION_MARGIN = 12;
+    private static final String[] PROTECTED_STRUCTURE_DATA_NAMES = new String[] {"Village", "Temple", "Mansion", "Monument", "Stronghold", "Mineshaft"};
     private RetroFutureCaveNoises cachedBiomeNoise;
     private long cachedBiomeNoiseSeed = Long.MIN_VALUE;
     private final RetroFutureLushCaveGenerator lushCaveGenerator = new RetroFutureLushCaveGenerator();
@@ -92,6 +101,11 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
 
         int blockX = chunkX * CHUNK_SIZE;
         int blockZ = chunkZ * CHUNK_SIZE;
+
+        if (isMostlyProtectedSurfaceBiomeChunk(world, blockX, blockZ) || intersectsProtectedStructure(world, blockX, blockZ)) {
+            return;
+        }
+
         CaveDensityContext caveContext = createCaveDensityContext(world, blockX, blockZ);
 
         lushCaveGenerator.generate(this, caveContext);
@@ -120,6 +134,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         final int topY;
         private final int[] surfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
         private final int[] terrainSurfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
+        private final byte[] protectedSurfaceColumnCache = new byte[CHUNK_SIZE * CHUNK_SIZE];
         private final CaveRegionType[] caveRegionTypeCache = new CaveRegionType[CHUNK_SIZE * CHUNK_SIZE];
 
         private CaveDensityContext(World world, int blockX, int blockZ) {
@@ -140,7 +155,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         boolean isDeepEnough(BlockPos pos, int minSurfaceDepth) {
-            return getTerrainSurfaceY(pos.getX(), pos.getZ()) - pos.getY() >= minSurfaceDepth;
+            return !isProtectedSurfaceColumn(pos.getX(), pos.getZ()) && getTerrainSurfaceY(pos.getX(), pos.getZ()) - pos.getY() >= minSurfaceDepth;
         }
 
         boolean isUndergroundOpenSpace(BlockPos pos, int minSurfaceDepth, double margin) {
@@ -245,6 +260,100 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         boolean isInsideChunk(int x, int z) {
             return x >= blockX && x < blockX + CHUNK_SIZE && z >= blockZ && z < blockZ + CHUNK_SIZE;
         }
+
+        boolean isProtectedSurfaceColumn(int x, int z) {
+            if (isInsideChunk(x, z)) {
+                int index = (x - blockX) * CHUNK_SIZE + z - blockZ;
+                byte cached = protectedSurfaceColumnCache[index];
+
+                if (cached != 0) {
+                    return cached == 1;
+                }
+
+                boolean protectedColumn = RetroFutureCaveWorldGenerator.this.isProtectedSurfaceBiomeColumn(world, x, z);
+                protectedSurfaceColumnCache[index] = protectedColumn ? (byte)1 : (byte)2;
+                return protectedColumn;
+            }
+
+            return RetroFutureCaveWorldGenerator.this.isProtectedSurfaceBiomeColumn(world, x, z);
+        }
+    }
+
+    private boolean isMostlyProtectedSurfaceBiomeChunk(World world, int blockX, int blockZ) {
+        int protectedColumns = 0;
+        int samples = 0;
+
+        for (int dx = 2; dx < CHUNK_SIZE; dx += 4) {
+            for (int dz = 2; dz < CHUNK_SIZE; dz += 4) {
+                samples++;
+
+                if (isProtectedSurfaceBiomeColumn(world, blockX + dx, blockZ + dz)) {
+                    protectedColumns++;
+                }
+            }
+        }
+
+        return protectedColumns >= samples / 2;
+    }
+
+    boolean isProtectedSurfaceBiomeColumn(World world, int x, int z) {
+        Biome biome = world.getBiome(new BlockPos(x, world.getSeaLevel(), z));
+        return biome == Biomes.OCEAN
+                || biome == Biomes.DEEP_OCEAN
+                || biome == Biomes.FROZEN_OCEAN
+                || biome == Biomes.RIVER
+                || biome == Biomes.FROZEN_RIVER
+                || biome == Biomes.BEACH
+                || biome == Biomes.COLD_BEACH
+                || biome == Biomes.STONE_BEACH
+                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN)
+                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
+                || BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH);
+    }
+
+    private boolean intersectsProtectedStructure(World world, int blockX, int blockZ) {
+        int minX = blockX - STRUCTURE_PROTECTION_MARGIN;
+        int minZ = blockZ - STRUCTURE_PROTECTION_MARGIN;
+        int maxX = blockX + CHUNK_SIZE - 1 + STRUCTURE_PROTECTION_MARGIN;
+        int maxZ = blockZ + CHUNK_SIZE - 1 + STRUCTURE_PROTECTION_MARGIN;
+
+        for (String dataName : PROTECTED_STRUCTURE_DATA_NAMES) {
+            MapGenStructureData structureData = (MapGenStructureData)world.loadData(MapGenStructureData.class, dataName);
+
+            if (structureData != null && intersectsStructureData(structureData.getTagCompound(), minX, minZ, maxX, maxZ)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean intersectsStructureData(NBTTagCompound structures, int minX, int minZ, int maxX, int maxZ) {
+        for (String key : structures.getKeySet()) {
+            NBTTagCompound structure = structures.getCompoundTag(key);
+
+            if (structure.hasKey("Valid") && !structure.getBoolean("Valid")) {
+                continue;
+            }
+
+            if (!structure.hasKey("BB", 11)) {
+                continue;
+            }
+
+            int[] bounds = structure.getIntArray("BB");
+
+            if (bounds.length != 6) {
+                continue;
+            }
+
+            StructureBoundingBox box = new StructureBoundingBox(bounds);
+
+            if (box.intersectsWith(minX, minZ, maxX, maxZ)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     boolean isLushBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -382,17 +491,24 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     void setFluidloggableBlock(World world, BlockPos pos, IBlockState newState, int flags) {
-        if (hasWaterFluid(world, pos)) {
+        FluidState fluidState = getWaterFluidState(world, pos);
+
+        if (fluidState.getFluid() == FluidRegistry.WATER) {
             world.setBlockState(pos, newState, flags);
-            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), FluidState.of(FluidRegistry.WATER), false, flags);
+            FluidloggedUtils.setFluidState(world, pos, world.getBlockState(pos), fluidState, false, flags);
+            world.scheduleUpdate(pos, fluidState.getState().getBlock(), fluidState.getState().getBlock().tickRate(world));
         } else {
             world.setBlockState(pos, newState, flags);
         }
     }
 
     private boolean hasWaterFluid(World world, BlockPos pos) {
+        return getWaterFluidState(world, pos).getFluid() == FluidRegistry.WATER;
+    }
+
+    private FluidState getWaterFluidState(World world, BlockPos pos) {
         IBlockState state = world.getBlockState(pos);
-        return state.getMaterial() == Material.WATER || FluidloggedUtils.getFluidState(world, pos, state).getFluid() == FluidRegistry.WATER;
+        return state.getMaterial() == Material.WATER ? FluidState.of(state) : FluidloggedUtils.getFluidState(world, pos, state);
     }
 
     void placePointedDripstone(World world, Random random, BlockPos start, EnumFacing direction) {
@@ -550,6 +666,6 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     boolean isNaturalCaveBlock(Block block) {
-        return block == Blocks.STONE || block == Blocks.DIRT || block == Blocks.GRAVEL || block == Blocks.COBBLESTONE || block == ModBlocks.DeepSlate || block == ModBlocks.DRIPSTONE_BLOCK;
+        return block == Blocks.STONE || block == Blocks.DIRT || block == Blocks.GRAVEL || block == ModBlocks.DeepSlate || block == ModBlocks.DRIPSTONE_BLOCK;
     }
 }

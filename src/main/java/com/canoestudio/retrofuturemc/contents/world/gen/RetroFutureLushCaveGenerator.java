@@ -56,6 +56,7 @@ import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWo
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_MOSS_PATCH_RADIUS_MIN;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_MOSS_PATCH_VEGETATION_CHANCE;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_MOSS_PATCH_VERTICAL_RANGE;
+import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_MOSS_PLACEMENT_SCAN_RANGE;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_PATCH_SALT;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_SPORE_BLOSSOM_ATTEMPTS;
 
@@ -87,15 +88,7 @@ final class RetroFutureLushCaveGenerator {
     }
 
     private boolean shouldTryLushCave(Random random, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
-        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH) {
-            return true;
-        }
-
-        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.DRIPSTONE) {
-            return random.nextInt(10) == 0;
-        }
-
-        return random.nextInt(5) == 0;
+        return chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH;
     }
 
     private BlockPos findLushCaveOrigin(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
@@ -127,7 +120,7 @@ final class RetroFutureLushCaveGenerator {
     private void placeLushFloorMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_MOSS_PATCH_ATTEMPTS; attempt++) {
             BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
-            BlockPos floor = findLushSurface(manager, context, start, EnumFacing.DOWN, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+            BlockPos floor = findLushSurface(manager, context, start, EnumFacing.DOWN, LUSH_MOSS_PLACEMENT_SCAN_RANGE);
 
             if (floor != null) {
                 placeMossPatch(manager, context, random, floor, false);
@@ -138,7 +131,7 @@ final class RetroFutureLushCaveGenerator {
     private void placeLushCeilingMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_CEILING_MOSS_PATCH_ATTEMPTS; attempt++) {
             BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
-            BlockPos ceiling = findLushSurface(manager, context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
+            BlockPos ceiling = findLushSurface(manager, context, start, EnumFacing.UP, LUSH_MOSS_PLACEMENT_SCAN_RANGE);
 
             if (ceiling != null) {
                 placeMossPatch(manager, context, random, ceiling, true);
@@ -263,19 +256,16 @@ final class RetroFutureLushCaveGenerator {
     }
 
     private void placeMossPatch(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, BlockPos originSurface, boolean ceiling) {
-        int xRadius = 1 + LUSH_MOSS_PATCH_RADIUS_MIN + random.nextInt(LUSH_MOSS_PATCH_RADIUS_MAX - LUSH_MOSS_PATCH_RADIUS_MIN + 1);
-        int zRadius = 1 + LUSH_MOSS_PATCH_RADIUS_MIN + random.nextInt(LUSH_MOSS_PATCH_RADIUS_MAX - LUSH_MOSS_PATCH_RADIUS_MIN + 1);
+        int radius = LUSH_MOSS_PATCH_RADIUS_MIN + random.nextInt(LUSH_MOSS_PATCH_RADIUS_MAX - LUSH_MOSS_PATCH_RADIUS_MIN + 1);
         int baseDepth = ceiling ? LUSH_CEILING_MOSS_PATCH_DEPTH_MIN + random.nextInt(LUSH_CEILING_MOSS_PATCH_DEPTH_MAX - LUSH_CEILING_MOSS_PATCH_DEPTH_MIN + 1) : LUSH_MOSS_PATCH_DEPTH;
 
-        for (int dx = -xRadius; dx <= xRadius; dx++) {
-            boolean xEdge = dx == -xRadius || dx == xRadius;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int distanceSq = dx * dx + dz * dz;
+                int radiusSq = radius * radius;
+                boolean edge = distanceSq > (radius - 1) * (radius - 1);
 
-            for (int dz = -zRadius; dz <= zRadius; dz++) {
-                boolean zEdge = dz == -zRadius || dz == zRadius;
-                boolean corner = xEdge && zEdge;
-                boolean edge = xEdge || zEdge;
-
-                if (corner || edge && random.nextFloat() > LUSH_MOSS_PATCH_EDGE_CHANCE) {
+                if (distanceSq > radiusSq || edge && random.nextFloat() > LUSH_MOSS_PATCH_EDGE_CHANCE) {
                     continue;
                 }
 
@@ -443,20 +433,17 @@ final class RetroFutureLushCaveGenerator {
         boolean waterloggedPatch = random.nextInt(3) != 0;
         int verticalRange = waterloggedPatch ? LUSH_CLAY_POOL_VERTICAL_RANGE : LUSH_CLAY_PATCH_VERTICAL_RANGE;
         float vegetationChance = waterloggedPatch ? LUSH_CLAY_POOL_VEGETATION_CHANCE : LUSH_CLAY_PATCH_VEGETATION_CHANCE;
-        int xRadius = 1 + LUSH_DRIPLEAF_PATCH_RADIUS_MIN + random.nextInt(LUSH_DRIPLEAF_PATCH_RADIUS_MAX - LUSH_DRIPLEAF_PATCH_RADIUS_MIN + 1);
-        int zRadius = 1 + LUSH_DRIPLEAF_PATCH_RADIUS_MIN + random.nextInt(LUSH_DRIPLEAF_PATCH_RADIUS_MAX - LUSH_DRIPLEAF_PATCH_RADIUS_MIN + 1);
+        int radius = LUSH_DRIPLEAF_PATCH_RADIUS_MIN + random.nextInt(LUSH_DRIPLEAF_PATCH_RADIUS_MAX - LUSH_DRIPLEAF_PATCH_RADIUS_MIN + 1);
         List<BlockPos> surfaceTargets = new ArrayList<BlockPos>();
         boolean placedGround = false;
 
-        for (int dx = -xRadius; dx <= xRadius; dx++) {
-            boolean xEdge = dx == -xRadius || dx == xRadius;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int distanceSq = dx * dx + dz * dz;
+                int radiusSq = radius * radius;
+                boolean edge = distanceSq > (radius - 1) * (radius - 1);
 
-            for (int dz = -zRadius; dz <= zRadius; dz++) {
-                boolean zEdge = dz == -zRadius || dz == zRadius;
-                boolean corner = xEdge && zEdge;
-                boolean edge = xEdge || zEdge;
-
-                if (corner || edge && random.nextFloat() > LUSH_DRIPLEAF_PATCH_EDGE_CHANCE) {
+                if (distanceSq > radiusSq || edge && random.nextFloat() > LUSH_DRIPLEAF_PATCH_EDGE_CHANCE) {
                     continue;
                 }
 
@@ -497,7 +484,7 @@ final class RetroFutureLushCaveGenerator {
                     continue;
                 }
 
-                world.setBlockState(plantPos, Blocks.WATER.getDefaultState(), 2);
+                placeLushWater(world, plantPos);
 
                 if (random.nextFloat() < vegetationChance) {
                     placeDripleafFeature(manager, world, random, plantPos, blockX, blockZ);
@@ -536,7 +523,11 @@ final class RetroFutureLushCaveGenerator {
 
         BlockPos floor = scan.down();
 
-        if (!manager.isInsideChunk(floor, blockX, blockZ) || world.canSeeSky(floor) || !manager.isLushReplaceable(world.getBlockState(floor).getBlock()) || !world.isSideSolid(floor, EnumFacing.UP, true)) {
+        if (!manager.isInsideChunk(floor, blockX, blockZ)
+                || manager.isProtectedSurfaceBiomeColumn(world, floor.getX(), floor.getZ())
+                || world.canSeeSky(floor)
+                || !manager.isLushReplaceable(world.getBlockState(floor).getBlock())
+                || !world.isSideSolid(floor, EnumFacing.UP, true)) {
             return null;
         }
 
@@ -627,6 +618,20 @@ final class RetroFutureLushCaveGenerator {
 
         manager.setFluidloggableBlock(world, basePos.up(stemHeight), ModBlocks.BIG_DRIPLEAF.getDefaultState().withProperty(BigDripleaf.FACING, facing), 2);
         return true;
+    }
+
+    private void placeLushWater(World world, BlockPos pos) {
+        IBlockState state = world.getBlockState(pos);
+
+        if (state.getMaterial() != Material.WATER || state.getBlock() == Blocks.WATER) {
+            world.setBlockState(pos, Blocks.FLOWING_WATER.getDefaultState(), 3);
+            state = world.getBlockState(pos);
+        }
+
+        if (state.getMaterial() == Material.WATER) {
+            world.scheduleUpdate(pos, state.getBlock(), state.getBlock().tickRate(world));
+            world.notifyNeighborsOfStateChange(pos, state.getBlock(), false);
+        }
     }
 
     private boolean canPlaceDripleafPartAt(World world, BlockPos pos, int blockX, int blockZ) {
