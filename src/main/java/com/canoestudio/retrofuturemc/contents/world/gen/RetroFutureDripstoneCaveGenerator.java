@@ -23,15 +23,17 @@ import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWo
 
 final class RetroFutureDripstoneCaveGenerator {
     void generate(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context) {
-        if (manager.getChunkCaveRegionType(context) != RetroFutureCaveWorldGenerator.CaveRegionType.DRIPSTONE) {
+        Random featureRandom = manager.createFeatureRandom(context.world, DRIPSTONE_PATCH_SALT, Math.floorDiv(context.blockX, CHUNK_SIZE), Math.floorDiv(context.blockZ, CHUNK_SIZE));
+        RetroFutureCaveWorldGenerator.CaveRegionType chunkType = manager.getChunkCaveRegionType(context);
+
+        if (!shouldTryDripstoneCave(featureRandom, chunkType)) {
             return;
         }
 
-        Random featureRandom = manager.createFeatureRandom(context.world, DRIPSTONE_PATCH_SALT, Math.floorDiv(context.blockX, CHUNK_SIZE), Math.floorDiv(context.blockZ, CHUNK_SIZE));
         int minY = Math.max(DRIPSTONE_CAVE_MIN_Y, context.bottomY);
         int maxY = Math.min(DRIPSTONE_CAVE_MAX_Y, context.topY);
         int[] budget = new int[] {DRIPSTONE_MAX_BLOCKS_PER_CHUNK, DRIPSTONE_MAX_COLUMNS_PER_CHUNK};
-        int clusterAttempts = DRIPSTONE_CLUSTER_MIN_ATTEMPTS + featureRandom.nextInt(DRIPSTONE_CLUSTER_MAX_ATTEMPTS - DRIPSTONE_CLUSTER_MIN_ATTEMPTS + 1);
+        int clusterAttempts = getClusterAttempts(featureRandom, chunkType);
 
         for (int attempt = 0; attempt < clusterAttempts; attempt++) {
             if (budget[0] <= 0 && budget[1] <= 0) {
@@ -52,55 +54,60 @@ final class RetroFutureDripstoneCaveGenerator {
         }
     }
 
+    private boolean shouldTryDripstoneCave(Random random, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
+        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.DRIPSTONE) {
+            return true;
+        }
+
+        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH) {
+            return random.nextInt(14) == 0;
+        }
+
+        return random.nextInt(6) == 0;
+    }
+
+    private int getClusterAttempts(Random random, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
+        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.DRIPSTONE) {
+            return DRIPSTONE_CLUSTER_MIN_ATTEMPTS + random.nextInt(DRIPSTONE_CLUSTER_MAX_ATTEMPTS - DRIPSTONE_CLUSTER_MIN_ATTEMPTS + 1);
+        }
+
+        return 1 + random.nextInt(2);
+    }
+
     private BlockPos findDripstoneClusterOrigin(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+        BlockPos fallback = null;
+
         for (int attempt = 0; attempt < 36; attempt++) {
-            BlockPos pos = new BlockPos(
-                    context.blockX + random.nextInt(CHUNK_SIZE),
-                    minY + random.nextInt(Math.max(1, maxY - minY + 1)),
-                    context.blockZ + random.nextInt(CHUNK_SIZE));
+            BlockPos pos = manager.findRandomCavePocket(context, random, minY, maxY, 1, RetroFutureCaveWorldGenerator.CHUNK_MARGIN, DRIPSTONE_MIN_SURFACE_DEPTH);
 
-            pos = findNearbyCaveAir(manager, context, pos, 14);
-
-            if (pos == null || !manager.isDripstoneBiomePatchNoise(context, pos)) {
+            if (pos == null) {
                 continue;
             }
 
             if (findDripstoneFloorY(manager, context, pos, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE && findDripstoneCeilingY(manager, context, pos, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE) {
-                return pos;
+                if (manager.isDripstoneBiomePatchNoise(context, pos)) {
+                    return pos;
+                }
+
+                if (fallback == null) {
+                    fallback = pos;
+                }
             }
+        }
+
+        if (fallback != null) {
+            return fallback;
+        }
+
+        BlockPos pocket = manager.findCavePocket(context, random, minY, maxY, 24, RetroFutureCaveWorldGenerator.CHUNK_MARGIN, DRIPSTONE_MIN_SURFACE_DEPTH);
+
+        if (pocket != null
+                && findDripstoneFloorY(manager, context, pocket, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE
+                && findDripstoneCeilingY(manager, context, pocket, DRIPSTONE_CLUSTER_SEARCH_RANGE) != NO_SURFACE) {
+            return pocket;
         }
 
         return null;
-    }
-
-    private BlockPos findNearbyCaveAir(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos start, int range) {
-        if (isUsableCaveAir(manager, context, start)) {
-            return start;
-        }
-
-        for (int dy = 1; dy <= range; dy++) {
-            BlockPos down = start.down(dy);
-
-            if (isUsableCaveAir(manager, context, down)) {
-                return down;
-            }
-
-            BlockPos up = start.up(dy);
-
-            if (isUsableCaveAir(manager, context, up)) {
-                return up;
-            }
-        }
-
-        return null;
-    }
-
-    private boolean isUsableCaveAir(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos pos) {
-        return context.isInsideChunk(pos)
-                && context.containsY(pos.getY())
-                && manager.isAirOrWater(context.world, pos)
-                && !context.world.canSeeSky(pos)
-                && context.isDeepEnough(pos, DRIPSTONE_MIN_SURFACE_DEPTH);
     }
 
     private void placeDripstoneCluster(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, BlockPos origin, int[] budget) {

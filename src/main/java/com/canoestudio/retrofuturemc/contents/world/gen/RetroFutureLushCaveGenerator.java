@@ -61,25 +61,72 @@ import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWo
 
 final class RetroFutureLushCaveGenerator {
     void generate(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context) {
-        if (manager.getChunkCaveRegionType(context) != RetroFutureCaveWorldGenerator.CaveRegionType.LUSH) {
+        Random featureRandom = manager.createFeatureRandom(context.world, LUSH_PATCH_SALT, Math.floorDiv(context.blockX, CHUNK_SIZE), Math.floorDiv(context.blockZ, CHUNK_SIZE));
+        RetroFutureCaveWorldGenerator.CaveRegionType chunkType = manager.getChunkCaveRegionType(context);
+
+        if (!shouldTryLushCave(featureRandom, chunkType)) {
             return;
         }
 
-        Random featureRandom = manager.createFeatureRandom(context.world, LUSH_PATCH_SALT, Math.floorDiv(context.blockX, CHUNK_SIZE), Math.floorDiv(context.blockZ, CHUNK_SIZE));
         int minY = Math.max(LUSH_CAVE_MIN_Y, context.bottomY);
         int maxY = Math.min(LUSH_CAVE_MAX_Y, context.topY);
+        BlockPos origin = findLushCaveOrigin(manager, context, featureRandom, minY, maxY, chunkType);
 
-        placeLushFloorMossPatches(manager, context, featureRandom, minY, maxY);
-        placeLushCeilingMossPatches(manager, context, featureRandom, minY, maxY);
-        placeLushClayPatches(manager, context, featureRandom, minY, maxY);
-        placeLushCaveVines(manager, context, featureRandom, minY, maxY);
-        placeLushSporeBlossoms(manager, context, featureRandom, minY, maxY);
-        spawnLushAxolotlGroups(manager, context, featureRandom, minY, maxY);
+        if (origin == null) {
+            return;
+        }
+
+        int pocketRadius = chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH ? 13 : 10;
+
+        placeLushFloorMossPatches(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
+        placeLushCeilingMossPatches(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
+        placeLushClayPatches(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
+        placeLushCaveVines(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
+        placeLushSporeBlossoms(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
+        spawnLushAxolotlGroups(manager, context, featureRandom, minY, maxY, origin, pocketRadius);
     }
 
-    private void placeLushFloorMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private boolean shouldTryLushCave(Random random, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
+        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH) {
+            return true;
+        }
+
+        if (chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.DRIPSTONE) {
+            return random.nextInt(10) == 0;
+        }
+
+        return random.nextInt(5) == 0;
+    }
+
+    private BlockPos findLushCaveOrigin(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, RetroFutureCaveWorldGenerator.CaveRegionType chunkType) {
+        BlockPos fallback = null;
+
+        for (int attempt = 0; attempt < 36; attempt++) {
+            BlockPos pocket = manager.findRandomCavePocket(context, random, minY, maxY, 1, RetroFutureCaveWorldGenerator.CHUNK_MARGIN, LUSH_MIN_SURFACE_DEPTH);
+
+            if (pocket == null) {
+                continue;
+            }
+
+            if (manager.isLushBiomePatchNoise(context, pocket)) {
+                return pocket;
+            }
+
+            if (fallback == null) {
+                fallback = pocket;
+            }
+        }
+
+        if (fallback != null && chunkType == RetroFutureCaveWorldGenerator.CaveRegionType.LUSH) {
+            return fallback;
+        }
+
+        return manager.findCavePocket(context, random, minY, maxY, 32, RetroFutureCaveWorldGenerator.CHUNK_MARGIN, LUSH_MIN_SURFACE_DEPTH);
+    }
+
+    private void placeLushFloorMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_MOSS_PATCH_ATTEMPTS; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos floor = findLushSurface(manager, context, start, EnumFacing.DOWN, LUSH_MOSS_PATCH_VERTICAL_RANGE);
 
             if (floor != null) {
@@ -88,9 +135,9 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private void placeLushCeilingMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private void placeLushCeilingMossPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_CEILING_MOSS_PATCH_ATTEMPTS; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos ceiling = findLushSurface(manager, context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
 
             if (ceiling != null) {
@@ -99,9 +146,9 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private void placeLushClayPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private void placeLushClayPatches(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_CLAY_PATCH_ATTEMPTS; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos floor = findLushSurface(manager, context, start, EnumFacing.DOWN, LUSH_CLAY_POOL_VERTICAL_RANGE);
 
             if (floor != null && tryPlaceClayPatchWithDripleaves(manager, context.world, random, floor, context.blockX, context.blockZ)) {
@@ -110,9 +157,9 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private void placeLushCaveVines(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private void placeLushCaveVines(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_CAVE_VINE_ATTEMPTS; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos ceiling = findLushSurface(manager, context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
 
             if (ceiling != null) {
@@ -125,9 +172,9 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private void placeLushSporeBlossoms(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private void placeLushSporeBlossoms(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         for (int attempt = 0; attempt < LUSH_SPORE_BLOSSOM_ATTEMPTS; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos ceiling = findLushSurface(manager, context, start, EnumFacing.UP, LUSH_MOSS_PATCH_VERTICAL_RANGE);
 
             if (ceiling != null) {
@@ -140,13 +187,13 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private void spawnLushAxolotlGroups(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
+    private void spawnLushAxolotlGroups(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
         if (random.nextInt(LUSH_AXOLOTL_GROUP_CHANCE) != 0) {
             return;
         }
 
         for (int attempt = 0; attempt < 8; attempt++) {
-            BlockPos start = randomLushFeatureStart(context, random, minY, maxY);
+            BlockPos start = randomLushFeatureStart(manager, context, random, minY, maxY, origin, pocketRadius);
             BlockPos water = findLushWaterSpawnPos(manager, context, random, start, 8);
 
             if (water != null) {
@@ -157,24 +204,25 @@ final class RetroFutureLushCaveGenerator {
         }
     }
 
-    private BlockPos randomLushFeatureStart(RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY) {
-        int x = context.blockX + random.nextInt(CHUNK_SIZE);
-        int z = context.blockZ + random.nextInt(CHUNK_SIZE);
+    private BlockPos randomLushFeatureStart(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, int minY, int maxY, BlockPos origin, int pocketRadius) {
+        int verticalRadius = Math.min(12, Math.max(5, pocketRadius));
 
-        for (int attempt = 0; attempt < 6; attempt++) {
-            int y = minY + random.nextInt(Math.max(1, maxY - minY + 1));
-            BlockPos pos = new BlockPos(x, y, z);
+        for (int attempt = 0; attempt < 10; attempt++) {
+            int x = origin.getX() + random.nextInt(pocketRadius * 2 + 1) - pocketRadius;
+            int y = clamp(origin.getY() + random.nextInt(verticalRadius * 2 + 1) - verticalRadius, minY, maxY);
+            int z = origin.getZ() + random.nextInt(pocketRadius * 2 + 1) - pocketRadius;
+            BlockPos pos = manager.findNearbyCaveAir(context, new BlockPos(x, y, z), 7, LUSH_MIN_SURFACE_DEPTH);
 
-            if (context.world.isAirBlock(pos) && !context.world.canSeeSky(pos) && context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)) {
+            if (pos != null && distanceSq2D(pos, origin) <= (pocketRadius + 3) * (pocketRadius + 3)) {
                 return pos;
             }
         }
 
-        return new BlockPos(x, minY + random.nextInt(Math.max(1, maxY - minY + 1)), z);
+        return origin;
     }
 
     private BlockPos findLushSurface(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, BlockPos start, EnumFacing direction, int maxSteps) {
-        if (!context.isInsideChunk(start) || manager != null && !manager.isLushRegionColumn(context, start.getX(), start.getZ())) {
+        if (!context.isInsideChunk(start)) {
             return null;
         }
 
@@ -321,7 +369,7 @@ final class RetroFutureLushCaveGenerator {
         for (int attempt = 0; attempt < 24; attempt++) {
             BlockPos pos = center.add(random.nextInt(radius * 2 + 1) - radius, random.nextInt(7) - 3, random.nextInt(radius * 2 + 1) - radius);
 
-            if (!context.isInsideChunk(pos) || !context.containsY(pos.getY()) || !context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH) || !manager.isLushRegionColumn(context, pos.getX(), pos.getZ())) {
+            if (!context.isInsideChunk(pos) || !context.containsY(pos.getY()) || !context.isDeepEnough(pos, LUSH_MIN_SURFACE_DEPTH)) {
                 continue;
             }
 
@@ -331,6 +379,16 @@ final class RetroFutureLushCaveGenerator {
         }
 
         return null;
+    }
+
+    private int distanceSq2D(BlockPos first, BlockPos second) {
+        int dx = first.getX() - second.getX();
+        int dz = first.getZ() - second.getZ();
+        return dx * dx + dz * dz;
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void maybeSpawnAxolotlGroupNearClayPool(RetroFutureCaveWorldGenerator manager, RetroFutureCaveWorldGenerator.CaveDensityContext context, Random random, BlockPos center) {

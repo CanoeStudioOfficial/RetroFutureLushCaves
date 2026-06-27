@@ -21,6 +21,7 @@ import java.util.Random;
 
 public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final int CHUNK_SIZE = 16;
+    static final int CHUNK_MARGIN = 4;
     static final int LUSH_CAVE_MIN_Y = 8;
     static final int LUSH_CAVE_MAX_Y = 62;
     static final int DRIPSTONE_CAVE_MIN_Y = 8;
@@ -62,9 +63,9 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final float LUSH_CLAY_POOL_VEGETATION_CHANCE = 0.1F;
     static final double CAVE_TYPE_SELECTOR_SCALE = 0.7D;
     static final double LUSH_REGION_SCALE = 0.55D;
-    static final double LUSH_REGION_THRESHOLD = -0.22D;
+    static final double LUSH_REGION_THRESHOLD = -0.14D;
     static final double DRIPSTONE_REGION_SCALE = 0.55D;
-    static final double DRIPSTONE_REGION_THRESHOLD = -0.18D;
+    static final double DRIPSTONE_REGION_THRESHOLD = -0.1D;
     static final double CAVE_REGION_TYPE_MARGIN = 0.04D;
     static final int CAVE_DECORATION_BOTTOM_Y = 4;
     static final int CAVE_DECORATION_TOP_Y = 72;
@@ -251,9 +252,10 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double region = context.biomeNoise.lushRegion.getValue(pos.getX() * LUSH_REGION_SCALE, 0.0D, pos.getZ() * LUSH_REGION_SCALE);
         double detail = context.biomeNoise.lushPatch.getValue(pos.getX() * 1.25D, pos.getY() * 1.35D, pos.getZ() * 1.25D);
         double caveAffinity = context.caveAffinity(pos);
+        CaveRegionType columnType = getCaveRegionType(context, pos.getX(), pos.getZ());
+        double typeBias = columnType == CaveRegionType.LUSH ? 0.18D : columnType == CaveRegionType.DRIPSTONE ? -0.12D : 0.0D;
 
-        return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.LUSH
-                && region * 0.36D + detail * 0.2D + vertical * 0.2D + caveAffinity * 0.24D > -0.28D;
+        return region * 0.36D + detail * 0.2D + vertical * 0.2D + caveAffinity * 0.24D + typeBias > -0.24D;
     }
 
     boolean isDripstoneBiomePatchNoise(CaveDensityContext context, BlockPos pos) {
@@ -261,9 +263,117 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         double detail = context.biomeNoise.dripstoneDetail.getValue(pos.getX() * 1.15D, pos.getY() * 1.45D, pos.getZ() * 1.15D);
         double ridged = 1.0D - Math.abs(context.biomeNoise.dripstoneRidge.getValue(pos.getX() * 1.8D, pos.getY() * 2.0D, pos.getZ() * 1.8D));
         double caveAffinity = context.caveAffinity(pos);
+        CaveRegionType columnType = getCaveRegionType(context, pos.getX(), pos.getZ());
+        double typeBias = columnType == CaveRegionType.DRIPSTONE ? 0.18D : columnType == CaveRegionType.LUSH ? -0.12D : 0.0D;
 
-        return getCaveRegionType(context, pos.getX(), pos.getZ()) == CaveRegionType.DRIPSTONE
-                && region * 0.32D + detail * 0.16D + ridged * 0.26D + caveAffinity * 0.22D > -0.08D;
+        return region * 0.32D + detail * 0.16D + ridged * 0.26D + caveAffinity * 0.22D + typeBias > -0.08D;
+    }
+
+    BlockPos findCavePocket(CaveDensityContext context, Random random, int minY, int maxY, int attempts, int margin, int minSurfaceDepth) {
+        return findCavePocket(context, random, minY, maxY, attempts, margin, minSurfaceDepth, true);
+    }
+
+    BlockPos findRandomCavePocket(CaveDensityContext context, Random random, int minY, int maxY, int attempts, int margin, int minSurfaceDepth) {
+        return findCavePocket(context, random, minY, maxY, attempts, margin, minSurfaceDepth, false);
+    }
+
+    private BlockPos findCavePocket(CaveDensityContext context, Random random, int minY, int maxY, int attempts, int margin, int minSurfaceDepth, boolean scanFallback) {
+        if (maxY < minY) {
+            return null;
+        }
+
+        int localMin = Math.max(0, Math.min(CHUNK_SIZE - 1, margin));
+        int localMax = Math.max(localMin + 1, CHUNK_SIZE - localMin);
+        BlockPos fallback = null;
+
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            BlockPos start = new BlockPos(
+                    context.blockX + localMin + random.nextInt(localMax - localMin),
+                    minY + random.nextInt(maxY - minY + 1),
+                    context.blockZ + localMin + random.nextInt(localMax - localMin));
+            BlockPos pocket = findNearbyCaveAir(context, start, 8, minSurfaceDepth);
+
+            if (pocket == null) {
+                continue;
+            }
+
+            if (hasNearbyNaturalSolid(context.world, pocket, 4, context.blockX, context.blockZ)) {
+                return pocket;
+            }
+
+            if (fallback == null) {
+                fallback = pocket;
+            }
+        }
+
+        if (!scanFallback) {
+            return fallback;
+        }
+
+        for (int column = 0; column < 10; column++) {
+            int x = context.blockX + localMin + random.nextInt(localMax - localMin);
+            int z = context.blockZ + localMin + random.nextInt(localMax - localMin);
+
+            for (int y = maxY; y >= minY; y--) {
+                BlockPos pocket = new BlockPos(x, y, z);
+
+                if (isUsableCaveAir(context, pocket, minSurfaceDepth) && hasNearbyNaturalSolid(context.world, pocket, 4, context.blockX, context.blockZ)) {
+                    return pocket;
+                }
+            }
+        }
+
+        return fallback;
+    }
+
+    BlockPos findNearbyCaveAir(CaveDensityContext context, BlockPos start, int range, int minSurfaceDepth) {
+        if (isUsableCaveAir(context, start, minSurfaceDepth)) {
+            return start;
+        }
+
+        for (int dy = 1; dy <= range; dy++) {
+            BlockPos down = start.down(dy);
+
+            if (isUsableCaveAir(context, down, minSurfaceDepth)) {
+                return down;
+            }
+
+            BlockPos up = start.up(dy);
+
+            if (isUsableCaveAir(context, up, minSurfaceDepth)) {
+                return up;
+            }
+        }
+
+        return null;
+    }
+
+    boolean isUsableCaveAir(CaveDensityContext context, BlockPos pos, int minSurfaceDepth) {
+        return context.isInsideChunk(pos)
+                && context.containsY(pos.getY())
+                && context.world.isAirBlock(pos)
+                && !context.world.canSeeSky(pos)
+                && context.isDeepEnough(pos, minSurfaceDepth);
+    }
+
+    boolean hasNearbyNaturalSolid(World world, BlockPos pos, int radius, int blockX, int blockZ) {
+        for (EnumFacing facing : EnumFacing.values()) {
+            for (int distance = 1; distance <= radius; distance++) {
+                BlockPos check = pos.offset(facing, distance);
+
+                if (!isInsideChunk(check, blockX, blockZ)) {
+                    continue;
+                }
+
+                Block block = world.getBlockState(check).getBlock();
+
+                if (isNaturalCaveBlock(block) || isLushReplaceable(block)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     boolean isAirOrWater(World world, BlockPos pos) {
