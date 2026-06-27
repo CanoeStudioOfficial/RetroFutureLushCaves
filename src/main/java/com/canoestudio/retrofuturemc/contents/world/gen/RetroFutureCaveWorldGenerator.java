@@ -2,10 +2,6 @@ package com.canoestudio.retrofuturemc.contents.world.gen;
 
 import com.canoestudio.retrofuturemc.contents.blocks.ModBlocks;
 import com.canoestudio.retrofuturemc.contents.blocks.PointedDripstoneBlock;
-import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesAPI;
-import com.yungnickyoung.minecraft.bettercaves.api.BetterCavesConfig;
-import com.yungnickyoung.minecraft.bettercaves.noise.MojangNormalNoise;
-import com.yungnickyoung.minecraft.bettercaves.world.carver.cave.mojang.Mojang118CaveDensitySampler;
 import git.jbredwards.fluidlogged_api.api.util.FluidState;
 import git.jbredwards.fluidlogged_api.api.util.FluidloggedUtils;
 import net.minecraft.block.Block;
@@ -71,18 +67,12 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     static final double DRIPSTONE_REGION_SCALE = 0.01D;
     static final double DRIPSTONE_REGION_THRESHOLD = -0.1D;
     static final double CAVE_REGION_TYPE_MARGIN = 0.12D;
-    static final double DENSITY_COLUMN_OPEN_MARGIN = 0.24D;
-    static final double DENSITY_DECORATION_OPEN_MARGIN = 0.34D;
+    static final int CAVE_DECORATION_BOTTOM_Y = 4;
+    static final int CAVE_DECORATION_TOP_Y = 72;
     static final long LUSH_PATCH_SALT = 0x4C55534843415645L;
     static final long DRIPSTONE_PATCH_SALT = 0x4452495053544F4EL;
     static final int NO_SURFACE = -1;
     static final EnumFacing[] DRIPLEAF_FEATURE_FACINGS = new EnumFacing[] {EnumFacing.EAST, EnumFacing.WEST, EnumFacing.SOUTH, EnumFacing.NORTH};
-    private BetterCavesConfig cachedBetterCavesConfig;
-    private int cachedBetterCavesConfigDimension = Integer.MIN_VALUE;
-    private Mojang118CaveDensitySampler cachedDensitySampler;
-    private long cachedDensitySeed = Long.MIN_VALUE;
-    private float cachedDensityHorizontalScale;
-    private float cachedDensityVerticalScale;
     private CaveBiomeNoise cachedBiomeNoise;
     private long cachedBiomeNoiseSeed = Long.MIN_VALUE;
     private final RetroFutureLushCaveGenerator lushCaveGenerator = new RetroFutureLushCaveGenerator();
@@ -100,51 +90,16 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
             return;
         }
 
-        if (!BetterCavesAPI.canGenerateInDimension(world.provider.getDimension())) {
-            return;
-        }
-
         int blockX = chunkX * CHUNK_SIZE;
         int blockZ = chunkZ * CHUNK_SIZE;
         CaveDensityContext caveContext = createCaveDensityContext(world, blockX, blockZ);
-
-        if (caveContext == null) {
-            return;
-        }
 
         lushCaveGenerator.generate(this, caveContext);
         dripstoneCaveGenerator.generate(this, caveContext);
     }
 
     private CaveDensityContext createCaveDensityContext(World world, int blockX, int blockZ) {
-        BetterCavesConfig betterCavesConfig = getBetterCavesConfig(world);
-
-        return new CaveDensityContext(world, blockX, blockZ, betterCavesConfig, getDensitySampler(world, betterCavesConfig));
-    }
-
-    private BetterCavesConfig getBetterCavesConfig(World world) {
-        int dimension = world.provider.getDimension();
-
-        if (cachedBetterCavesConfig == null || cachedBetterCavesConfigDimension != dimension) {
-            cachedBetterCavesConfigDimension = dimension;
-            cachedBetterCavesConfig = BetterCavesAPI.getConfigForDimension(dimension);
-        }
-
-        return cachedBetterCavesConfig;
-    }
-
-    private Mojang118CaveDensitySampler getDensitySampler(World world, BetterCavesConfig config) {
-        float horizontalScale = config.getMojang118StyleCaveHorizontalScale();
-        float verticalScale = config.getMojang118StyleCaveVerticalScale();
-
-        if (cachedDensitySampler == null || cachedDensitySeed != world.getSeed() || cachedDensityHorizontalScale != horizontalScale || cachedDensityVerticalScale != verticalScale) {
-            cachedDensitySeed = world.getSeed();
-            cachedDensityHorizontalScale = horizontalScale;
-            cachedDensityVerticalScale = verticalScale;
-            cachedDensitySampler = new Mojang118CaveDensitySampler(world.getSeed(), horizontalScale, verticalScale);
-        }
-
-        return cachedDensitySampler;
+        return new CaveDensityContext(world, blockX, blockZ);
     }
 
     private CaveBiomeNoise getBiomeNoise(World world) {
@@ -157,24 +112,24 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
     }
 
     static final class CaveBiomeNoise {
-        private final MojangNormalNoise caveTypeSelector;
-        private final MojangNormalNoise lushRegion;
-        private final MojangNormalNoise lushDetail;
-        private final MojangNormalNoise lushPatch;
-        private final MojangNormalNoise lushPatchDetail;
-        private final MojangNormalNoise dripstoneRegion;
-        private final MojangNormalNoise dripstoneDetail;
-        private final MojangNormalNoise dripstoneRidge;
+        private final RetroFutureCaveNoise caveTypeSelector;
+        private final RetroFutureCaveNoise lushRegion;
+        private final RetroFutureCaveNoise lushDetail;
+        private final RetroFutureCaveNoise lushPatch;
+        private final RetroFutureCaveNoise lushPatchDetail;
+        private final RetroFutureCaveNoise dripstoneRegion;
+        private final RetroFutureCaveNoise dripstoneDetail;
+        private final RetroFutureCaveNoise dripstoneRidge;
 
         private CaveBiomeNoise(long seed) {
-            this.caveTypeSelector = MojangNormalNoise.create(seed, "retro_cave_type_selector", -8, 1.0D);
-            this.lushRegion = MojangNormalNoise.create(seed, "retro_lush_caves_region", -8, 1.0D);
-            this.lushDetail = MojangNormalNoise.create(seed, "retro_lush_caves_detail", -7, 1.0D);
-            this.lushPatch = MojangNormalNoise.create(seed, "retro_lush_caves_patch", -7, 1.0D);
-            this.lushPatchDetail = MojangNormalNoise.create(seed, "retro_lush_caves_patch_detail", -6, 1.0D);
-            this.dripstoneRegion = MojangNormalNoise.create(seed, "retro_dripstone_caves_region", -8, 1.0D);
-            this.dripstoneDetail = MojangNormalNoise.create(seed, "retro_dripstone_caves_detail", -7, 1.0D);
-            this.dripstoneRidge = MojangNormalNoise.create(seed, "retro_dripstone_caves_ridge", -6, 1.0D);
+            this.caveTypeSelector = new RetroFutureCaveNoise(seed, "retro_cave_type_selector", 4);
+            this.lushRegion = new RetroFutureCaveNoise(seed, "retro_lush_caves_region", 4);
+            this.lushDetail = new RetroFutureCaveNoise(seed, "retro_lush_caves_detail", 3);
+            this.lushPatch = new RetroFutureCaveNoise(seed, "retro_lush_caves_patch", 3);
+            this.lushPatchDetail = new RetroFutureCaveNoise(seed, "retro_lush_caves_patch_detail", 3);
+            this.dripstoneRegion = new RetroFutureCaveNoise(seed, "retro_dripstone_caves_region", 4);
+            this.dripstoneDetail = new RetroFutureCaveNoise(seed, "retro_dripstone_caves_detail", 3);
+            this.dripstoneRidge = new RetroFutureCaveNoise(seed, "retro_dripstone_caves_ridge", 3);
         }
     }
 
@@ -182,26 +137,20 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         final World world;
         final int blockX;
         final int blockZ;
-        private final Mojang118CaveDensitySampler densitySampler;
         private final CaveBiomeNoise biomeNoise;
         final int bottomY;
         final int topY;
-        private final int surfaceCutoff;
-        private final double densityThreshold;
         private final int[] surfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
         private final int[] terrainSurfaceYCache = new int[CHUNK_SIZE * CHUNK_SIZE];
         private final CaveRegionType[] caveRegionTypeCache = new CaveRegionType[CHUNK_SIZE * CHUNK_SIZE];
 
-        private CaveDensityContext(World world, int blockX, int blockZ, BetterCavesConfig config, Mojang118CaveDensitySampler densitySampler) {
+        private CaveDensityContext(World world, int blockX, int blockZ) {
             this.world = world;
             this.blockX = blockX;
             this.blockZ = blockZ;
-            this.densitySampler = densitySampler;
             this.biomeNoise = getBiomeNoise(world);
-            this.bottomY = Math.max(0, config.getMojang118StyleCaveBottom());
-            this.topY = Math.min(world.getActualHeight() - 1, config.getMojang118StyleCaveTop());
-            this.surfaceCutoff = Math.max(0, config.getMojang118StyleCaveSurfaceCutoffDepth());
-            this.densityThreshold = config.getMojang118StyleCaveDensityThreshold();
+            this.bottomY = Math.max(1, CAVE_DECORATION_BOTTOM_Y);
+            this.topY = Math.min(world.getActualHeight() - 2, CAVE_DECORATION_TOP_Y);
         }
 
         boolean containsY(int y) {
@@ -209,7 +158,7 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         boolean isLikelyOpen(BlockPos pos, double margin) {
-            return containsY(pos.getY()) && sampleCarverDensity(pos) <= densityThreshold + margin;
+            return containsY(pos.getY()) && caveAffinity(pos) >= 0.35D - Math.min(0.25D, margin);
         }
 
         boolean isDeepEnough(BlockPos pos, int minSurfaceDepth) {
@@ -221,27 +170,32 @@ public class RetroFutureCaveWorldGenerator implements IWorldGenerator {
         }
 
         double caveAffinity(BlockPos pos) {
-            double density = sampleCarverDensity(pos);
-            return clamp((densityThreshold + 0.2D - density) / 0.4D, 0.0D, 1.0D);
-        }
-
-        private double sampleCarverDensity(BlockPos pos) {
-            double density = densitySampler.sampleDensity(pos.getX(), pos.getY(), pos.getZ());
-
-            if (surfaceCutoff <= 0) {
-                return density;
+            if (!containsY(pos.getY()) || world.canSeeSky(pos) || !isDeepEnough(pos, 8)) {
+                return 0.0D;
             }
 
-            int surfaceY = Math.min(topY, getSurfaceY(pos.getX(), pos.getZ()));
-            int transitionBoundary = Math.max(bottomY, surfaceY - surfaceCutoff);
+            double score = RetroFutureCaveWorldGenerator.this.isAirOrWater(world, pos) ? 0.35D : 0.0D;
+            int openNeighbors = 0;
+            int naturalNeighbors = 0;
 
-            if (pos.getY() >= transitionBoundary) {
-                int transitionHeight = Math.max(1, surfaceY - transitionBoundary);
-                double surfaceFactor = clamp((pos.getY() - transitionBoundary) / (double)transitionHeight, 0.0D, 1.0D);
-                density += surfaceFactor * 0.45D;
+            for (EnumFacing facing : EnumFacing.values()) {
+                BlockPos neighbor = pos.offset(facing);
+                IBlockState state = world.getBlockState(neighbor);
+
+                if (RetroFutureCaveWorldGenerator.this.isAirOrWater(world, neighbor)) {
+                    openNeighbors++;
+                } else if (RetroFutureCaveWorldGenerator.this.isNaturalCaveBlock(state.getBlock())) {
+                    naturalNeighbors++;
+                }
             }
 
-            return density;
+            score += openNeighbors / 6.0D * 0.45D;
+
+            if (naturalNeighbors > 0) {
+                score += 0.2D;
+            }
+
+            return clamp(score, 0.0D, 1.0D);
         }
 
         private int getSurfaceY(int x, int z) {

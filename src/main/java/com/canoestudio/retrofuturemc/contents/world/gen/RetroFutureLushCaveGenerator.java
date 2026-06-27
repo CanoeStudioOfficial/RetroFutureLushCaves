@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Random;
 
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.CHUNK_SIZE;
-import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DENSITY_DECORATION_OPEN_MARGIN;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DRIPLEAF_FEATURE_FACINGS;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_AXOLOTL_CLAY_POOL_CHANCE;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.LUSH_AXOLOTL_GROUP_CHANCE;

@@ -45,8 +45,7 @@ dependencies {
     // 'group:name:version:classifier' where classifier is optional
     implementation rfg.deobf("curse.maven:fluidlogged-api-485654:7581579")
 
-    //implementation 'com.github.CanoeStudioOfficial:YUNGs-Better-Caves:1.12.2-SNAPSHOT'
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: ['bettercaves-*.jar'])
     // Example - Deobfuscating dependencies:
     // rfg.deobf('curse.maven:had-enough-items-557549:4543375')
     // By wrapping a dependency descriptor in rfg.deobf() method call, the dependency is queued for deobfuscation

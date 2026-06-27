@@ -9,7 +9,6 @@ import net.minecraft.world.World;
 import java.util.Random;
 
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.CHUNK_SIZE;
-import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DENSITY_COLUMN_OPEN_MARGIN;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DRIPSTONE_CAVE_MAX_Y;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DRIPSTONE_CAVE_MIN_Y;
 import static com.canoestudio.retrofuturemc.contents.world.gen.RetroFutureCaveWorldGenerator.DRIPSTONE_CLUSTER_MAX_ATTEMPTS;
